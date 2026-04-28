@@ -589,7 +589,7 @@ st.markdown(
         <div class="hero-badge">ABB PDF AUTOMATION TOOL</div>
         <div class="hero-title">ABB Datasheet Pack Builder</div>
         <div class="hero-subtitle">
-            Enter ABB item codes, retrieve their Print-to-PDF documents automatically,
+            Enter ABB item codes, retrieve their datasheets automatically,
             and generate one consolidated PDF pack ready for download.
         </div>
     </div>
@@ -694,7 +694,6 @@ with col2:
 st.markdown(
     """
     <div class="info-note">
-        If a code contains a dash, the part after the first dash will be used as the final item code.
         Codes from manual input and Excel are combined automatically and duplicates are removed.
         The merged PDF keeps the same order as the codes entered by the user.
     </div>
