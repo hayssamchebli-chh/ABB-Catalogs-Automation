@@ -8,7 +8,6 @@ libxrandr2
 libxrender1
 libxcursor1
 libxi6
-libgtk-3-0
 libasound2
 libfontconfig1
 libfreetype6
@@ -17,5 +16,4 @@ libdrm2
 libxkbcommon0
 libxcb1
 libxext6
-libcups2
 libdbus-1-3
