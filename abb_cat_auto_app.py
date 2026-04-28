@@ -216,7 +216,7 @@ async def download_abb_pdf_from_page(page, item_code: str, output_dir: str):
     url = BASE_URL.format(item_code=item_code)
     await safe_goto(page, url)
 
-    async with page.expect_download(timeout=30000) as download_info:
+    async with page.expect_download(timeout=60000) as download_info:
         button = page.get_by_role("button", name="Print to PDF")
 
         try:
@@ -695,7 +695,6 @@ st.markdown(
     """
     <div class="info-note">
         Codes from manual input and Excel are combined automatically and duplicates are removed.
-        The merged PDF keeps the same order as the codes entered by the user.
     </div>
     """,
     unsafe_allow_html=True,
