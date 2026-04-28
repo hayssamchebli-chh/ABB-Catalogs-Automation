@@ -13,7 +13,33 @@ from pypdf import PdfReader, PdfWriter
 BASE_URL = "https://new.abb.com/products/{item_code}"
 MAX_CONCURRENT_PAGES = 4
 
+import os
+import subprocess
+import sys
+from pathlib import Path
+import streamlit as st
 
+BROWSERS_DIR = Path(".playwright-browsers")
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(BROWSERS_DIR)
+
+def firefox_installed() -> bool:
+    return any(BROWSERS_DIR.glob("firefox-*/firefox/firefox"))
+
+def ensure_playwright_firefox():
+    if firefox_installed():
+        return
+
+    with st.spinner("Installing Playwright Firefox browser... this may take a minute on first startup."):
+        result = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "firefox"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                "Failed to install Playwright Firefox.\n\n"
+                f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
+            )
 # ---------------------------
 # Helpers
 # ---------------------------
