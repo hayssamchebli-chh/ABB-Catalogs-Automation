@@ -17,3 +17,5 @@ libxkbcommon0
 libxcb1
 libxext6
 libdbus-1-3
+libxcb-shm0
+libgtk-3-0
