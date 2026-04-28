@@ -1,5 +1,8 @@
 import asyncio
+import os
 import re
+import subprocess
+import sys
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -13,33 +16,41 @@ from pypdf import PdfReader, PdfWriter
 BASE_URL = "https://new.abb.com/products/{item_code}"
 MAX_CONCURRENT_PAGES = 4
 
-import os
-import subprocess
-import sys
-from pathlib import Path
-import streamlit as st
-
-BROWSERS_DIR = Path(".playwright-browsers")
+# Use a writable persistent temp location on Streamlit Cloud
+BROWSERS_DIR = Path("/tmp/playwright-browsers")
+BROWSERS_DIR.mkdir(parents=True, exist_ok=True)
 os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(BROWSERS_DIR)
+
 
 def firefox_installed() -> bool:
     return any(BROWSERS_DIR.glob("firefox-*/firefox/firefox"))
 
+
+@st.cache_resource(show_spinner=False)
 def ensure_playwright_firefox():
     if firefox_installed():
-        return
+        return True
 
-    with st.spinner("Installing Playwright Firefox browser... this may take a minute on first startup."):
-        result = subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "firefox"],
-            capture_output=True,
-            text=True,
+    result = subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "firefox"],
+        capture_output=True,
+        text=True,
+        env=os.environ.copy(),
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Failed to install Playwright Firefox.\n\n"
+            f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
         )
-        if result.returncode != 0:
-            raise RuntimeError(
-                "Failed to install Playwright Firefox.\n\n"
-                f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
-            )
+
+    if not firefox_installed():
+        raise RuntimeError(
+            "Playwright reported success, but Firefox browser was not found in "
+            f"{BROWSERS_DIR}"
+        )
+
+    return True
 # ---------------------------
 # Helpers
 # ---------------------------
@@ -305,6 +316,8 @@ async def download_abb_pdfs_shared_context(
 
 
 def run_abb_download_pipeline(codes: List[str], max_concurrent_pages: int = MAX_CONCURRENT_PAGES):
+    ensure_playwright_firefox()
+
     with TemporaryDirectory() as temp_dir:
         results = asyncio.run(
             download_abb_pdfs_shared_context(
