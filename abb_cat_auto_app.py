@@ -220,9 +220,9 @@ async def download_abb_pdf_from_page(page, item_code: str, output_dir: str):
         button = page.get_by_role("button", name="Print to PDF")
 
         try:
-            await button.click(timeout=5000)
+            await button.click(timeout= 10000)
         except Exception:
-            await button.click(timeout=5000, force=True)
+            await button.click(timeout= 10000, force=True)
 
     download = await download_info.value
 
