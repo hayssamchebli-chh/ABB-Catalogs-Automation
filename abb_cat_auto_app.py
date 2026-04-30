@@ -14,7 +14,7 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 from pypdf import PdfReader, PdfWriter
 
 BASE_URL = "https://new.abb.com/products/{item_code}"
-MAX_CONCURRENT_PAGES = 4
+MAX_CONCURRENT_PAGES = 2
 
 # Use a writable persistent temp location on Streamlit Cloud
 BROWSERS_DIR = Path("/tmp/playwright-browsers")
