@@ -12,9 +12,36 @@ import pandas as pd
 import streamlit as st
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from pypdf import PdfReader, PdfWriter
+from pypdf.annotations import Link
+from pypdf.generic import Fit
+from reportlab.lib.colors import HexColor
+from reportlab.pdfgen import canvas as pdf_canvas
 
 BASE_URL = "https://new.abb.com/products/{item_code}"
 MAX_CONCURRENT_PAGES = 5
+
+# Cover page inserted before each item's datasheet in the merged PDF
+COVER_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "item_type_template.pdf",
+)
+COVER_TEXT_COLOR = "#1F4EA1"  # same blue as the Harb Electric logo
+COVER_TEXT_X = 42  # left aligned with the logo
+COVER_TEXT_TOP_OFFSET = 170  # distance of the first line from the top of the page
+COVER_TEXT_MAX_WIDTH = 340  # keep the text inside the white area
+COVER_TEXT_FONT = "Helvetica-Bold"
+COVER_TEXT_FONT_SIZE = 34
+COVER_TEXT_MIN_FONT_SIZE = 18
+
+# Table of contents at the beginning of the merged PDF
+TOC_LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "toc_logo.png")
+TOC_ACCENT_COLOR = "#1F4EA1"
+TOC_TITLE_COLOR = "#102033"
+TOC_DOTS_COLOR = "#9AA7B5"
+TOC_MARGIN_X = 48
+TOC_ENTRY_SPACING = 28
+TOC_ENTRIES_FIRST_PAGE = 18
+TOC_ENTRIES_LATER_PAGES = 22
 
 # Use a writable persistent temp location on Streamlit Cloud
 BROWSERS_DIR = Path("/tmp/playwright-browsers")
@@ -103,14 +130,6 @@ def read_excel_file(uploaded_file) -> pd.DataFrame:
     return pd.read_excel(uploaded_file)
 
 
-def extract_codes_from_selected_column(df: pd.DataFrame, selected_column: str) -> List[str]:
-    if selected_column not in df.columns:
-        return []
-
-    values = df[selected_column].dropna().astype(str).tolist()
-    return normalize_codes(values)
-
-
 def is_valid_pdf_bytes(pdf_bytes: bytes) -> bool:
     try:
         reader = PdfReader(BytesIO(pdf_bytes), strict=False)
@@ -120,13 +139,334 @@ def is_valid_pdf_bytes(pdf_bytes: bytes) -> bool:
         return False
 
 
-def merge_pdf_bytes(pdf_list: List[bytes]) -> bytes:
+def extract_items_from_excel(df: pd.DataFrame) -> List[dict]:
+    """Parse Type / Code rows from the uploaded Excel file.
+
+    Columns are matched by name (a column containing "type" and one containing
+    "code" or "item"), falling back to the first two columns. Each row becomes
+    one item: {"type": ..., "code": ...}. Rows are kept in order and repeated
+    codes stay as separate items.
+    """
+    columns = list(df.columns)
+
+    def find_column(keywords: tuple, fallback_index: int):
+        for column in columns:
+            name = str(column).strip().lower()
+            if any(keyword in name for keyword in keywords):
+                return column
+        if len(columns) > fallback_index:
+            return columns[fallback_index]
+        return None
+
+    if len(columns) == 1:
+        type_col = None
+        code_col = columns[0]
+    else:
+        type_col = find_column(("type",), 0)
+        code_col = find_column(("code", "item"), 1)
+
+    if code_col is None:
+        return []
+
+    def cell_text(row, column) -> str:
+        if column is None:
+            return ""
+        value = row.get(column)
+        if value is None or pd.isna(value):
+            return ""
+        return re.sub(r"\s+", " ", str(value)).strip()
+
+    items = []
+
+    for _, row in df.iterrows():
+        code = clean_code(cell_text(row, code_col))
+        if not code:
+            continue
+
+        items.append(
+            {
+                "type": cell_text(row, type_col),
+                "code": code,
+            }
+        )
+
+    return items
+
+
+def load_cover_template_bytes() -> bytes | None:
+    """Load the cover page template PDF shipped with the app."""
+    try:
+        with open(COVER_TEMPLATE_PATH, "rb") as f:
+            return f.read()
+    except Exception:
+        return None
+
+
+def build_type_overlay(type_text: str, page_width: float, page_height: float) -> bytes:
+    """Draw the item type in the blank space under the logo of the cover page."""
+    buffer = BytesIO()
+    overlay = pdf_canvas.Canvas(buffer, pagesize=(page_width, page_height))
+    overlay.setFillColor(HexColor(COVER_TEXT_COLOR))
+
+    def wrap_lines(font_size: int) -> List[str]:
+        lines = []
+        current = ""
+        for word in type_text.split():
+            candidate = f"{current} {word}".strip()
+            if overlay.stringWidth(candidate, COVER_TEXT_FONT, font_size) <= COVER_TEXT_MAX_WIDTH:
+                current = candidate
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        return lines
+
+    font_size = COVER_TEXT_FONT_SIZE
+    lines = wrap_lines(font_size)
+
+    while font_size > COVER_TEXT_MIN_FONT_SIZE and (
+        len(lines) > 3
+        or any(
+            overlay.stringWidth(line, COVER_TEXT_FONT, font_size) > COVER_TEXT_MAX_WIDTH
+            for line in lines
+        )
+    ):
+        font_size -= 2
+        lines = wrap_lines(font_size)
+
+    overlay.setFont(COVER_TEXT_FONT, font_size)
+    y = page_height - COVER_TEXT_TOP_OFFSET
+
+    for line in lines:
+        overlay.drawString(COVER_TEXT_X, y, line)
+        y -= font_size * 1.3
+
+    overlay.save()
+    return buffer.getvalue()
+
+
+def build_cover_page(template_bytes: bytes, type_text: str):
+    """Return the cover template page, with the item type written on it."""
+    template_reader = PdfReader(BytesIO(template_bytes))
+    page = template_reader.pages[0]
+
+    if type_text:
+        overlay_bytes = build_type_overlay(
+            type_text,
+            float(page.mediabox.width),
+            float(page.mediabox.height),
+        )
+        overlay_reader = PdfReader(BytesIO(overlay_bytes))
+        page.merge_page(overlay_reader.pages[0])
+
+    return page
+
+
+def toc_pages_needed(entry_count: int) -> int:
+    """Number of pages the table of contents itself will occupy."""
+    if entry_count <= TOC_ENTRIES_FIRST_PAGE:
+        return 1
+
+    remaining = entry_count - TOC_ENTRIES_FIRST_PAGE
+    extra_pages = -(-remaining // TOC_ENTRIES_LATER_PAGES)  # ceiling division
+    return 1 + extra_pages
+
+
+def build_toc_pdf(
+    entries: List[dict],
+    page_width: float,
+    page_height: float,
+) -> tuple:
+    """Draw the table of contents pages.
+
+    entries: [{"title": str, "target_page": int}] where target_page is the
+    0-based page index of the item's cover page in the final document.
+
+    Returns (pdf_bytes, link_boxes). link_boxes hold the clickable rectangle
+    of every entry: [{"page": toc_page_index, "rect": (x0,y0,x1,y1), "target": int}].
+    """
+    buffer = BytesIO()
+    toc = pdf_canvas.Canvas(buffer, pagesize=(page_width, page_height))
+
+    accent = HexColor(TOC_ACCENT_COLOR)
+    title_color = HexColor(TOC_TITLE_COLOR)
+    dots_color = HexColor(TOC_DOTS_COLOR)
+
+    number_x = TOC_MARGIN_X
+    title_x = TOC_MARGIN_X + 34
+    page_num_right = page_width - TOC_MARGIN_X
+    max_title_width = page_num_right - title_x - 60
+
+    def truncate(text: str, font: str, size: float) -> str:
+        if toc.stringWidth(text, font, size) <= max_title_width:
+            return text
+        while text and toc.stringWidth(text + "...", font, size) > max_title_width:
+            text = text[:-1]
+        return text.rstrip() + "..."
+
+    def draw_first_page_header() -> float:
+        """Draw logo + title, return the y where entries start."""
+        y_top = page_height - 52
+
+        try:
+            from reportlab.lib.utils import ImageReader
+
+            logo = ImageReader(TOC_LOGO_PATH)
+            logo_w, logo_h = logo.getSize()
+            draw_h = 26
+            draw_w = logo_w * draw_h / logo_h
+            toc.drawImage(
+                logo,
+                TOC_MARGIN_X,
+                y_top - draw_h,
+                width=draw_w,
+                height=draw_h,
+                mask="auto",
+            )
+        except Exception:
+            pass
+
+        title_y = y_top - 64
+        toc.setFillColor(title_color)
+        toc.setFont("Helvetica-Bold", 27)
+        toc.drawString(TOC_MARGIN_X, title_y, "Table of Contents")
+
+        toc.setFillColor(accent)
+        toc.rect(TOC_MARGIN_X, title_y - 14, 64, 4, stroke=0, fill=1)
+
+        return title_y - 52
+
+    def draw_later_page_header() -> float:
+        toc.setFillColor(dots_color)
+        toc.setFont("Helvetica", 11)
+        toc.drawString(TOC_MARGIN_X, page_height - 56, "Table of Contents (continued)")
+        toc.setFillColor(accent)
+        toc.rect(TOC_MARGIN_X, page_height - 64, 42, 2.6, stroke=0, fill=1)
+        return page_height - 100
+
+    link_boxes = []
+    toc_page_index = 0
+    y = draw_first_page_header()
+    capacity = TOC_ENTRIES_FIRST_PAGE
+    drawn_on_page = 0
+
+    for position, entry in enumerate(entries, start=1):
+        if drawn_on_page >= capacity:
+            toc.showPage()
+            toc_page_index += 1
+            y = draw_later_page_header()
+            capacity = TOC_ENTRIES_LATER_PAGES
+            drawn_on_page = 0
+
+        title = truncate(entry["title"], "Helvetica-Bold", 12.5)
+        page_label = str(entry["target_page"] + 1)
+
+        toc.setFillColor(accent)
+        toc.setFont("Helvetica-Bold", 10.5)
+        toc.drawString(number_x, y, f"{position:02d}")
+
+        toc.setFillColor(title_color)
+        toc.setFont("Helvetica-Bold", 12.5)
+        toc.drawString(title_x, y, title)
+
+        toc.setFont("Helvetica-Bold", 11.5)
+        toc.setFillColor(accent)
+        toc.drawRightString(page_num_right, y, page_label)
+
+        title_end = title_x + toc.stringWidth(title, "Helvetica-Bold", 12.5) + 8
+        num_start = page_num_right - toc.stringWidth(page_label, "Helvetica-Bold", 11.5) - 8
+        if num_start > title_end + 12:
+            toc.setFillColor(dots_color)
+            toc.setFont("Helvetica", 10)
+            dot = "."
+            dot_width = toc.stringWidth(dot, "Helvetica", 10) + 3.2
+            x = title_end
+            while x < num_start:
+                toc.drawString(x, y + 1, dot)
+                x += dot_width
+
+        link_boxes.append(
+            {
+                "page": toc_page_index,
+                "rect": (TOC_MARGIN_X - 6, y - 8, page_num_right + 6, y + 14),
+                "target": entry["target_page"],
+            }
+        )
+
+        y -= TOC_ENTRY_SPACING
+        drawn_on_page += 1
+
+    toc.save()
+    return buffer.getvalue(), link_boxes
+
+
+def merge_items_with_covers(items: List[dict], template_bytes) -> bytes:
+    """Merge every item's datasheet into one PDF.
+
+    The document starts with a clickable table of contents listing each
+    item's Type. Every successful item then contributes a cover page (the
+    template with the item's Type written on it) followed by its datasheet.
+    Items are kept in order and duplicates are NOT removed: every item gets
+    its own cover and datasheet even when two items share the same file.
+
+    items: [{"type": str, "code": str, "pdf_bytes": bytes}]
+    """
+    prepared = []
+    for item in items:
+        if not item.get("pdf_bytes"):
+            continue
+        reader = PdfReader(BytesIO(item["pdf_bytes"]), strict=False)
+        prepared.append((item, reader))
+
+    if not prepared:
+        return b""
+
+    cover_pages = 1 if template_bytes else 0
+    toc_page_count = toc_pages_needed(len(prepared))
+
+    if template_bytes:
+        template_page = PdfReader(BytesIO(template_bytes)).pages[0]
+        page_width = float(template_page.mediabox.width)
+        page_height = float(template_page.mediabox.height)
+    else:
+        first_page = prepared[0][1].pages[0]
+        page_width = float(first_page.mediabox.width)
+        page_height = float(first_page.mediabox.height)
+
+    entries = []
+    cursor = toc_page_count
+    for item, reader in prepared:
+        title = (item.get("type") or "").strip() or item.get("code", "") or "Item"
+        entries.append({"title": title, "target_page": cursor})
+        cursor += cover_pages + len(reader.pages)
+
+    toc_bytes, link_boxes = build_toc_pdf(entries, page_width, page_height)
+
     writer = PdfWriter()
 
-    for pdf_bytes in pdf_list:
-        reader = PdfReader(BytesIO(pdf_bytes), strict=False)
+    for page in PdfReader(BytesIO(toc_bytes)).pages:
+        writer.add_page(page)
+
+    for item, reader in prepared:
+        if template_bytes:
+            writer.add_page(build_cover_page(template_bytes, (item.get("type") or "").strip()))
         for page in reader.pages:
             writer.add_page(page)
+
+    for box in link_boxes:
+        writer.add_annotation(
+            page_number=box["page"],
+            annotation=Link(
+                rect=box["rect"],
+                target_page_index=box["target"],
+                fit=Fit(fit_type="/Fit"),
+            ),
+        )
+
+    for entry in entries:
+        writer.add_outline_item(entry["title"], entry["target_page"])
 
     output = BytesIO()
     writer.write(output)
@@ -315,49 +655,75 @@ async def download_abb_pdfs_shared_context(
     return results
 
 
-def run_abb_download_pipeline(codes: List[str], max_concurrent_pages: int = MAX_CONCURRENT_PAGES):
+def run_abb_download_pipeline(items: List[dict], max_concurrent_pages: int = MAX_CONCURRENT_PAGES):
+    """Download every unique code once, then merge one cover + datasheet per item.
+
+    items: [{"type": str, "code": str}] in the order they should appear in the
+    merged PDF. Repeated codes are downloaded once but each item still gets
+    its own cover page and datasheet copy.
+    """
     ensure_playwright_firefox()
+
+    unique_codes = []
+    for item in items:
+        if item["code"] not in unique_codes:
+            unique_codes.append(item["code"])
 
     with TemporaryDirectory() as temp_dir:
         results = asyncio.run(
             download_abb_pdfs_shared_context(
-                item_codes=codes,
+                item_codes=unique_codes,
                 output_dir=temp_dir,
                 max_concurrent_pages=max_concurrent_pages,
             )
         )
 
-        downloaded_pdf_bytes = []
+        results_by_code = {result["code"]: result for result in results}
+
         success_rows = []
         failed_rows = []
+        merge_items = []
 
-        for result in results:
-            if result["success"] and result["pdf_bytes"]:
-                downloaded_pdf_bytes.append(result["pdf_bytes"])
+        for item in items:
+            result = results_by_code.get(item["code"], {})
+
+            if result.get("success") and result.get("pdf_bytes"):
+                merge_items.append(
+                    {
+                        "type": item["type"],
+                        "code": item["code"],
+                        "pdf_bytes": result["pdf_bytes"],
+                    }
+                )
                 success_rows.append(
                     {
-                        "Code": result["code"],
+                        "Code": item["code"],
+                        "Type": item["type"],
                         "Status": "Downloaded",
                     }
                 )
             else:
                 failed_rows.append(
                     {
-                        "Code": result["code"],
+                        "Code": item["code"],
+                        "Type": item["type"],
                         "Status": "Failed",
-                        "Error": result["error"],
+                        "Error": result.get("error"),
                     }
                 )
 
-        merged_pdf = merge_pdf_bytes(downloaded_pdf_bytes) if downloaded_pdf_bytes else None
+        merged_pdf = None
+        if merge_items:
+            template_bytes = load_cover_template_bytes()
+            merged_pdf = merge_items_with_covers(merge_items, template_bytes)
 
         return {
             "merged_pdf": merged_pdf,
             "success_rows": success_rows,
             "failed_rows": failed_rows,
-            "downloaded_count": len(downloaded_pdf_bytes),
+            "downloaded_count": len(merge_items),
             "failed_count": len(failed_rows),
-            "submitted_count": len(codes),
+            "submitted_count": len(items),
         }
 
 
@@ -606,7 +972,8 @@ st.markdown(
     <div class="section-card">
         <div class="section-title">Build your PDF pack</div>
         <div class="section-subtitle">
-            Add codes manually or upload an Excel file and select the column containing the item codes.
+            Add codes manually or upload an Excel file with a Type column and a Code column.
+            The Type is written on the cover page inserted before each item's datasheet.
         </div>
     </div>
     """,
@@ -614,7 +981,7 @@ st.markdown(
 )
 
 manual_codes = []
-excel_codes = []
+excel_items = []
 excel_df = None
 uploaded_excel = None
 
@@ -664,22 +1031,15 @@ with input_col2:
             if excel_df.empty:
                 st.warning("The uploaded Excel file is empty.")
             else:
-                column_options = excel_df.columns.tolist()
-
-                default_index = 0
-                if "Item No.1" in column_options:
-                    default_index = column_options.index("Item No.1")
-
-                selected_column = st.selectbox(
-                    "Select the column containing item codes",
-                    options=column_options,
-                    index=default_index,
-                )
-
-                excel_codes = extract_codes_from_selected_column(excel_df, selected_column)
-                st.caption(f"{len(excel_codes)} code(s) detected from Excel.")
+                excel_items = extract_items_from_excel(excel_df)
+                st.caption(f"{len(excel_items)} item(s) detected from Excel.")
         except Exception as e:
             st.error(f"Could not read Excel file: {e}")
+
+# Full-width Excel preview below the input row
+if excel_df is not None and not excel_df.empty:
+    st.caption("Excel preview")
+    st.dataframe(excel_df.head(10), use_container_width=True)
 
 col1, col2 = st.columns([1, 1])
 with col1:
@@ -694,7 +1054,9 @@ with col2:
 st.markdown(
     """
     <div class="info-note">
-        Codes from manual input and Excel are combined automatically and duplicates are removed.
+        The merged PDF starts with a clickable table of contents, and each item's datasheet
+        is preceded by a cover page showing its Type from the Excel file. Repeated codes are
+        downloaded once but every item keeps its own cover and datasheet.
     </div>
     """,
     unsafe_allow_html=True,
@@ -707,16 +1069,16 @@ run_clicked = st.button("Build PDF Pack", type="primary", use_container_width=Tr
 # Action / Processing
 # ---------------------------
 if run_clicked:
-    codes = normalize_codes(manual_codes + excel_codes)
+    all_items = [{"type": "", "code": code} for code in manual_codes] + excel_items
 
-    if not codes:
+    if not all_items:
         st.error("Please enter item codes manually or upload an Excel file.")
     else:
         with st.spinner("Downloading ABB PDFs and building the merged pack..."):
             try:
                 result = run_abb_download_pipeline(
-                    codes=codes,
-                    max_concurrent_pages=min(max_pages, len(codes)),
+                    items=all_items,
+                    max_concurrent_pages=min(max_pages, len(all_items)),
                 )
 
                 st.markdown(

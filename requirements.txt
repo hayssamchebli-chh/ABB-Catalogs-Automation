@@ -3,3 +3,4 @@ pandas
 openpyxl
 pypdf
 playwright
+reportlab
