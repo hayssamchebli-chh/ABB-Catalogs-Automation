@@ -567,6 +567,37 @@ async def dismiss_cookie_overlay(page):
     return False
 
 
+async def neutralize_cookie_overlay(page):
+    """Stop the cookie-consent overlay from intercepting clicks.
+
+    ABB's consent cookies are rejected by the browser ("invalid domain"), so
+    the cassie widget reloads on every product page with an invisible
+    full-page overlay that swallows clicks - and it re-creates the overlay
+    when it is removed from the DOM. Injected CSS keeps applying to
+    re-created elements, which makes it the reliable way to disable it.
+    """
+    try:
+        await page.add_style_tag(
+            content=(
+                "#cassie-widget, .cassie-overlay, .syrenis-cookie-widget "
+                "{ display: none !important; pointer-events: none !important; }"
+            )
+        )
+    except Exception:
+        pass
+
+    try:
+        await page.evaluate(
+            """() => {
+                document.querySelectorAll(
+                    '#cassie-widget, .cassie-overlay, .syrenis-cookie-widget'
+                ).forEach(el => el.remove());
+            }"""
+        )
+    except Exception:
+        pass
+
+
 async def prepare_shared_context(context):
     warmup_page = await context.new_page()
     try:
@@ -578,22 +609,53 @@ async def prepare_shared_context(context):
         await warmup_page.close()
 
 
-async def download_abb_pdf_from_page(page, item_code: str, output_dir: str):
+async def download_abb_pdf_from_page(page, item_code: str, output_dir: str, click_attempts: int = 3):
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
     url = BASE_URL.format(item_code=item_code)
     await safe_goto(page, url)
 
-    async with page.expect_download(timeout=60000) as download_info:
-        button = page.get_by_role("button", name="Print to PDF")
+    # ABB generates some product PDFs on demand (PisWebApi Pdf/Generate) and
+    # the first generation can take longer than one wait window. The result
+    # is cached server-side, so retrying the click usually succeeds even when
+    # the first attempt times out.
+    download = None
+    last_error = None
 
+    for attempt in range(1, click_attempts + 1):
         try:
-            await button.click(timeout= 10000)
-        except Exception:
-            await button.click(timeout= 10000, force=True)
+            await neutralize_cookie_overlay(page)
 
-    download = await download_info.value
+            async with page.expect_download(timeout=90000) as download_info:
+                button = page.get_by_role("button", name="Print to PDF").first
+
+                try:
+                    await button.click(timeout=10000)
+                except Exception:
+                    # An overlay is still eating the click: trigger the
+                    # button's handler directly, which no overlay can block.
+                    await button.evaluate("el => el.click()")
+
+            download = await download_info.value
+            break
+        except Exception as e:
+            last_error = e
+            print(f"{item_code}: no download on attempt {attempt}/{click_attempts} ({e})")
+
+            if attempt < click_attempts:
+                try:
+                    await page.reload(wait_until="load", timeout=60000)
+                except Exception:
+                    pass
+                await page.wait_for_timeout(1500)
+
+    if download is None:
+        raise RuntimeError(
+            f"PDF was not generated after {click_attempts} attempts. The ABB PDF "
+            f"generator can be slow for this product; running the same code again "
+            f"usually works because the PDF gets cached. Last error: {last_error}"
+        )
 
     suggested_name = download.suggested_filename
     if not suggested_name.lower().endswith(".pdf"):
