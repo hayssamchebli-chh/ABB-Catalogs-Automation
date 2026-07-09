@@ -193,6 +193,35 @@ def extract_items_from_excel(df: pd.DataFrame) -> List[dict]:
     return items
 
 
+def drop_untyped_duplicates(items: List[dict]) -> List[dict]:
+    """Apply the duplicates rule to the item list.
+
+    Items WITH a Type always keep their own cover page + datasheet, even
+    when several items share the same code. Items WITHOUT a Type are
+    included only once: repeated untyped occurrences are dropped, and an
+    untyped occurrence is also dropped when the same code appears elsewhere
+    with a Type (its datasheet is already in the pack).
+    """
+    typed_keys = {
+        item["code"].casefold() for item in items if (item.get("type") or "").strip()
+    }
+
+    seen_untyped = set()
+    result = []
+
+    for item in items:
+        key = item["code"].casefold()
+
+        if not (item.get("type") or "").strip():
+            if key in typed_keys or key in seen_untyped:
+                continue
+            seen_untyped.add(key)
+
+        result.append(item)
+
+    return result
+
+
 def load_cover_template_bytes() -> bytes | None:
     """Load the cover page template PDF shipped with the app."""
     try:
@@ -1055,8 +1084,9 @@ st.markdown(
     """
     <div class="info-note">
         The merged PDF starts with a clickable table of contents, and each item's datasheet
-        is preceded by a cover page showing its Type from the Excel file. Repeated codes are
-        downloaded once but every item keeps its own cover and datasheet.
+        is preceded by a cover page showing its Type from the Excel file. Repeated codes with
+        a Type each keep their own cover and datasheet; repeated codes without a Type are
+        included only once.
     </div>
     """,
     unsafe_allow_html=True,
@@ -1069,7 +1099,9 @@ run_clicked = st.button("Build PDF Pack", type="primary", use_container_width=Tr
 # Action / Processing
 # ---------------------------
 if run_clicked:
-    all_items = [{"type": "", "code": code} for code in manual_codes] + excel_items
+    all_items = drop_untyped_duplicates(
+        [{"type": "", "code": code} for code in manual_codes] + excel_items
+    )
 
     if not all_items:
         st.error("Please enter item codes manually or upload an Excel file.")
