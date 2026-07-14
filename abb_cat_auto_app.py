@@ -1067,7 +1067,7 @@ with input_col1:
     with manual_type_col:
         types_text = st.text_area(
             "Type",
-            height=200,
+            height=100,
             placeholder="Example:\nMotion Sensor\n\nSwitch 2G",
         )
 
