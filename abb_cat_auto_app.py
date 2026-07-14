@@ -1056,8 +1056,7 @@ with input_col1:
         """
         <div class="panel-title">Paste item types and codes</div>
         <div class="panel-subtitle">
-            One item per line: its Type on the left, its code on the right.
-            Line 1 of Type belongs to line 1 of Code, and so on. Type can stay empty.
+            One item per line: Line 1 of Type belongs to line 1 of Code, and so on. Type can stay empty.
         </div>
         """,
         unsafe_allow_html=True,
