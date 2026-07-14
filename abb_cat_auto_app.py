@@ -1139,7 +1139,7 @@ with col2:
 st.markdown(
     """
     <div class="info-note">
-        The merged PDF starts with a clickable table of contents, and each item's datasheet
+        The merged PDF starts with a table of contents, and each item's datasheet
         is preceded by a cover page showing its Type from the Excel file. Repeated codes with
         a Type each keep their own cover and datasheet; repeated codes without a Type are
         included only once.
