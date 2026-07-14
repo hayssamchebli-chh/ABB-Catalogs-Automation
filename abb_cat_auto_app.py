@@ -6,7 +6,7 @@ import sys
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Iterable, List
+from typing import List
 
 import pandas as pd
 import streamlit as st
@@ -90,33 +90,6 @@ def clean_code(value: str) -> str:
         value = value.split("-", 1)[1].strip()
 
     return value
-
-
-def normalize_codes(raw_codes: Iterable[str]) -> List[str]:
-    codes = []
-
-    for item in raw_codes:
-        if item is None:
-            continue
-
-        item_str = str(item).strip()
-        if not item_str:
-            continue
-
-        parts = re.split(r"[\s,;]+", item_str)
-        for part in parts:
-            part = clean_code(part)
-            if part:
-                codes.append(part)
-
-    seen = set()
-    unique_codes = []
-    for code in codes:
-        if code not in seen:
-            seen.add(code)
-            unique_codes.append(code)
-
-    return unique_codes
 
 
 def ensure_pdf_filename(filename: str) -> str:
@@ -1071,7 +1044,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-manual_codes = []
+manual_items = []
 excel_items = []
 excel_df = None
 uploaded_excel = None
@@ -1081,22 +1054,44 @@ input_col1, input_col2 = st.columns(2)
 with input_col1:
     st.markdown(
         """
-        <div class="panel-title">Paste item codes</div>
+        <div class="panel-title">Paste item types and codes</div>
         <div class="panel-subtitle">
-            Enter one code per line, or separate them with commas, spaces, or semicolons.
+            One item per line: its Type on the left, its code on the right.
+            Line 1 of Type belongs to line 1 of Code, and so on. Type can stay empty.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    codes_text = st.text_area(
-        "Paste item codes",
-        height=220,
-        placeholder="Example:\nZW213\nTZ107\nABB-TZW510",
-        label_visibility="collapsed",
-    )
+    manual_type_col, manual_code_col = st.columns(2)
 
-    manual_codes = normalize_codes(codes_text.splitlines())
+    with manual_type_col:
+        types_text = st.text_area(
+            "Type",
+            height=220,
+            placeholder="Example:\nMotion Sensor\nSwitch 2G",
+        )
+
+    with manual_code_col:
+        codes_text = st.text_area(
+            "Code",
+            height=220,
+            placeholder="Example:\nZW213\nTZ107\nABB-TZW510",
+        )
+
+    type_lines = types_text.splitlines()
+    code_lines = codes_text.splitlines()
+
+    for line_index, raw_code in enumerate(code_lines):
+        code = clean_code(raw_code.strip())
+        if not code:
+            continue
+
+        type_text = ""
+        if line_index < len(type_lines):
+            type_text = type_lines[line_index].strip()
+
+        manual_items.append({"type": type_text, "code": code})
 
 with input_col2:
     st.markdown(
@@ -1161,9 +1156,7 @@ run_clicked = st.button("Build PDF Pack", type="primary", use_container_width=Tr
 # Action / Processing
 # ---------------------------
 if run_clicked:
-    all_items = drop_untyped_duplicates(
-        [{"type": "", "code": code} for code in manual_codes] + excel_items
-    )
+    all_items = drop_untyped_duplicates(manual_items + excel_items)
 
     if not all_items:
         st.error("Please enter item codes manually or upload an Excel file.")
