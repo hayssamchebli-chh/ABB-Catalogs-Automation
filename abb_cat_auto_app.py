@@ -1067,14 +1067,14 @@ with input_col1:
     with manual_type_col:
         types_text = st.text_area(
             "Type",
-            height=100,
+            height=1000,
             placeholder="Example:\nMotion Sensor\n\nSwitch 2G",
         )
 
     with manual_code_col:
         codes_text = st.text_area(
             "Code",
-            height=200,
+            height=1000,
             placeholder="Example:\nZW213\nTZ107\nABB-TZW510",
         )
 
