@@ -582,6 +582,49 @@ async def prepare_shared_context(context):
         await warmup_page.close()
 
 
+async def find_print_button(page):
+    """Return the datasheet button on a product page, or None.
+
+    Most product pages label it "Print to PDF", but some templates (for example
+    the low-voltage SACE breakers) show only a printer icon whose accessible
+    name differs, so fall back to any print-looking button or link.
+    """
+    candidates = [
+        page.get_by_role("button", name="Print to PDF"),
+        page.get_by_role("button", name=re.compile(r"print|pdf|datasheet", re.I)),
+        page.get_by_role("link", name=re.compile(r"print to pdf|datasheet", re.I)),
+        page.locator(
+            "[aria-label*='print' i], [title*='print' i], "
+            "button:has(svg[class*='print' i]), button:has(use[href*='print' i]), "
+            "button[class*='print' i], a[class*='print' i]"
+        ),
+    ]
+
+    for locator in candidates:
+        try:
+            if await locator.count() > 0:
+                return locator.first
+        except Exception:
+            pass
+
+    return None
+
+
+async def describe_page_buttons(page) -> str:
+    """Short list of the buttons on the page, to explain a missing print button."""
+    try:
+        buttons = await page.eval_on_selector_all(
+            "button, [role='button']",
+            """els => els.slice(0, 15).map(e =>
+                (e.getAttribute('aria-label') || e.getAttribute('title') ||
+                 e.innerText || e.className || e.tagName).toString().trim().slice(0, 40)
+            )""",
+        )
+        return f"page '{await page.title()}' at {page.url}; buttons seen: {buttons}"
+    except Exception as e:
+        return f"could not inspect page ({e})"
+
+
 async def download_abb_pdf_from_page(page, item_code: str, output_dir: str, click_attempts: int = 3):
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -600,9 +643,14 @@ async def download_abb_pdf_from_page(page, item_code: str, output_dir: str, clic
         try:
             await neutralize_cookie_overlay(page)
 
-            async with page.expect_download(timeout=90000) as download_info:
-                button = page.get_by_role("button", name="Print to PDF").first
+            button = await find_print_button(page)
+            if button is None:
+                raise RuntimeError(
+                    "print/datasheet button not found - "
+                    + await describe_page_buttons(page)
+                )
 
+            async with page.expect_download(timeout=90000) as download_info:
                 try:
                     await button.click(timeout=10000)
                 except Exception:
