@@ -10,6 +10,7 @@ from item_codes import (
     items_from_excel,
     items_from_text,
     read_excel_file,
+    supplier_guesses,
 )
 from pdf_pack import ensure_pdf_filename, get_front_cover_bytes
 from phoenix_datasheets import (
@@ -401,6 +402,18 @@ if excel_df is not None and not excel_df.empty:
     st.dataframe(excel_df.head(10), width="stretch")
 
 all_items = drop_untyped_duplicates(manual_items + excel_items)
+
+guessed_items = supplier_guesses(all_items)
+if guessed_items:
+    shown = "\n".join(
+        f"- `{item['input']}` will be looked up on **{SUPPLIER_NAMES[item['supplier']]}**"
+        for item in guessed_items[:10]
+    )
+    more = f"\n- ...and {len(guessed_items) - 10} more" if len(guessed_items) > 10 else ""
+    st.warning(
+        f"{len(guessed_items)} code(s) have no supplier prefix, so the supplier was guessed. "
+        f"If a guess is wrong, add `ABB-`, `PHX-` or `GAV-` in front of the code.\n\n{shown}{more}"
+    )
 
 if all_items:
     counts = Counter(item["supplier"] for item in all_items)

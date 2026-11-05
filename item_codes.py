@@ -30,14 +30,19 @@ DEFAULT_SUPPLIER = "abb"
 EMPTY_VALUES = {"", "nan", "none", "null"}
 
 
-def parse_item_code(value) -> Optional[Tuple[str, str]]:
-    """Return (supplier, code) for one input code, or None when it is empty.
+def parse_item_code(value) -> Optional[Tuple[str, str, bool]]:
+    """Return (supplier, code, assumed) for one input code, or None when it is empty.
 
-    - ABS-1SDA100720R1 -> ("abb", "1SDA100720R1")
-    - PHX-3010110      -> ("phoenix", "3010110")
-    - GAV-WM30AV53H    -> ("gavazzi", "WM30AV53H")
-    - 3010110          -> ("phoenix", "3010110")  bare numbers are Phoenix item numbers
-    - TZW510           -> ("abb", "TZW510")
+    assumed is True when the code carried no supplier prefix, so the supplier
+    was guessed (ABB for text, Phoenix Contact for a bare number).
+
+    - ABS-1SDA100720R1 -> ("abb", "1SDA100720R1", False)
+    - PHX-3010110      -> ("phoenix", "3010110", False)
+    - GAV-WM30AV53H    -> ("gavazzi", "WM30AV53H", False)
+    - GAVWM30AV53H     -> ("gavazzi", "WM30AV53H", False)  hyphen forgotten
+    - GAV-MOR 05       -> ("gavazzi", "MOR 05", False)     spaces belong to the code
+    - 3010110          -> ("phoenix", "3010110", True)
+    - TZW510           -> ("abb", "TZW510", True)
     """
     if value is None:
         return None
@@ -46,38 +51,80 @@ def parse_item_code(value) -> Optional[Tuple[str, str]]:
     if text.lower() in EMPTY_VALUES:
         return None
 
-    text = text.replace("–", "-").replace("—", "-")
+    text = text.replace("\u2013", "-").replace("\u2014", "-")
     text = re.sub(r"\s*-\s*", "-", text)
 
+    if re.fullmatch(r"(%s)-?" % "|".join(PREFIX_TO_SUPPLIER), text, flags=re.IGNORECASE):
+        return None  # a prefix with no code after it
+
+    assumed = False
     match = re.match(r"^([A-Za-z]{2,5})-(.+)$", text)
+    unhyphenated = re.match(r"^(GAV|PHX)(?=[A-Za-z0-9])(.+)$", text, flags=re.IGNORECASE)
+
     if match:
-        supplier = PREFIX_TO_SUPPLIER.get(match.group(1).upper(), DEFAULT_SUPPLIER)
         rest = match.group(2).strip()
+        supplier = PREFIX_TO_SUPPLIER.get(match.group(1).upper())
+        if supplier is None:
+            supplier, assumed = DEFAULT_SUPPLIER, True
+    elif unhyphenated:
+        supplier = PREFIX_TO_SUPPLIER[unhyphenated.group(1).upper()]
+        rest = unhyphenated.group(2).strip()
     elif re.fullmatch(r"[\d,]+(\.\d+)?", text):
-        supplier = "phoenix"
-        rest = text
+        supplier, rest, assumed = "phoenix", text, True
     else:
-        supplier = DEFAULT_SUPPLIER
-        rest = text
+        supplier, rest, assumed = DEFAULT_SUPPLIER, text, True
 
     if supplier == "phoenix":
         code = clean_phoenix_code(rest)
     elif supplier == "gavazzi":
-        code = re.sub(r"\s+", "", rest).upper()
+        code = re.sub(r"\s+", " ", rest).upper()
     else:
         code = rest
 
     if not code:
         return None
 
-    return supplier, code
+    return supplier, code, assumed
+
+
+KNOWN_PREFIX = re.compile(r"^(%s)-" % "|".join(PREFIX_TO_SUPPLIER), flags=re.IGNORECASE)
+PHOENIX_LIKE = re.compile(r"^(PHX-)?[\d.]+$", flags=re.IGNORECASE)
 
 
 def split_codes(cell_text: str) -> List[str]:
-    """Split one line or cell into codes (commas, semicolons or spaces)."""
-    text = str(cell_text or "").replace("–", "-").replace("—", "-")
+    """Split one line or cell into codes.
+
+    Commas, semicolons and line breaks always separate codes. A space only
+    does when the next word starts a new code (it has a supplier prefix such
+    as PHX-, or it follows a Phoenix Contact number), because some codes
+    contain spaces: "GAV-MOR 05" is one code, "PHX-3010110 PHX-3201853" is two.
+    """
+    text = str(cell_text or "").replace("\u2013", "-").replace("\u2014", "-")
     text = re.sub(r"\s*-\s*", "-", text)
-    return [part for part in re.split(r"[\s,;]+", text) if part]
+
+    codes: List[str] = []
+
+    for segment in re.split(r"[,;\r\n]+", text):
+        current = None
+
+        for token in segment.split():
+            starts_new_code = (
+                current is None
+                or KNOWN_PREFIX.match(token)
+                or (PHOENIX_LIKE.match(current) and PHOENIX_LIKE.match(token))
+            )
+
+            if starts_new_code:
+                if current is not None:
+                    codes.append(current)
+                current = token
+            else:
+                current = f"{current} {token}"
+
+        if current is not None:
+            codes.append(current)
+
+    return codes
 
 
 def build_items(rows: Iterable[Tuple[str, str]]) -> List[dict]:
@@ -94,13 +141,14 @@ def build_items(rows: Iterable[Tuple[str, str]]) -> List[dict]:
             if parsed is None:
                 continue
 
-            supplier, code = parsed
+            supplier, code, assumed = parsed
             items.append(
                 {
                     "type": (type_text or "").strip(),
                     "supplier": supplier,
                     "code": code,
                     "input": raw_code,
+                    "assumed": assumed,
                 }
             )
 
@@ -212,3 +260,14 @@ def drop_untyped_duplicates(items: List[dict]) -> List[dict]:
         result.append(item)
 
     return result
+
+
+def supplier_guesses(items: List[dict]) -> List[dict]:
+    """Items whose supplier was guessed, when other items carry explicit prefixes.
+
+    A list where nothing has a prefix (the old ABB-only way of working) is
+    left alone; once some codes have prefixes, an unprefixed one is probably
+    a typo such as GAVEM24... instead of GAV-EM24...
+    """
+    has_explicit = any(not item.get("assumed") for item in items)
+    return [item for item in items if item.get("assumed")] if has_explicit else []
