@@ -1,4 +1,5 @@
 from collections import Counter
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -20,8 +21,13 @@ from phoenix_datasheets import (
 )
 from pipeline import build_pack, download_all
 
+APP_DIR = Path(__file__).resolve().parent
+
+EXAMPLE_TYPES = "Breaker 1000A\nBreaker 800A\nPower supply\nEnergy meter"
+EXAMPLE_CODES = "ABS-1SDA100720R1\nABS-1SDA100719R1\nPHX-3010110\nGAV-WM30AV53H"
+
 # ---------------------------
-# Page config
+# Page config + style
 # ---------------------------
 st.set_page_config(
     page_title="ABB·PHX·GAV Pack Builder",
@@ -29,257 +35,58 @@ st.set_page_config(
     layout="centered",
 )
 
-
-# ---------------------------
-# Custom CSS (Harb Electric blue)
-# ---------------------------
 st.markdown(
-    """
-    <style>
-        :root {
-            --brand-blue: #1f4ea1;
-            --brand-blue-dark: #163a7a;
-            --brand-charcoal: #1f1f1f;
-            --brand-bg: #f5f6f8;
-            --brand-card: #ffffff;
-            --brand-border: #d9dde3;
-            --brand-muted: #5f6670;
-            --brand-soft-blue: #eef3fb;
-        }
-
-        .stApp {
-            background-color: var(--brand-bg);
-        }
-
-        .block-container {
-            padding-top: 2rem;
-            padding-bottom: 2rem;
-            max-width: 1000px;
-        }
-
-        .hero-card {
-            background: linear-gradient(135deg, var(--brand-blue) 0%, var(--brand-blue-dark) 100%);
-            color: white;
-            border-radius: 18px;
-            padding: 1.6rem 1.6rem 1.4rem 1.6rem;
-            box-shadow: 0 10px 25px rgba(31, 78, 161, 0.18);
-            margin-bottom: 1.2rem;
-        }
-
-        .hero-badge {
-            display: inline-block;
-            font-size: 0.78rem;
-            font-weight: 700;
-            letter-spacing: 0.4px;
-            background: rgba(255,255,255,0.16);
-            border: 1px solid rgba(255,255,255,0.20);
-            padding: 0.35rem 0.7rem;
-            border-radius: 999px;
-            margin-bottom: 0.8rem;
-        }
-
-        .hero-title {
-            font-size: 2rem;
-            font-weight: 800;
-            line-height: 1.2;
-            margin-bottom: 0.45rem;
-        }
-
-        .hero-subtitle {
-            font-size: 1rem;
-            color: #e6edf9;
-            line-height: 1.55;
-            margin-bottom: 0;
-        }
-
-        .supplier-chips {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-            margin-top: 1rem;
-        }
-
-        .supplier-chip {
-            background: rgba(255,255,255,0.14);
-            border: 1px solid rgba(255,255,255,0.24);
-            border-radius: 999px;
-            padding: 0.35rem 0.75rem;
-            font-size: 0.85rem;
-            font-weight: 700;
-        }
-
-        .supplier-chip code {
-            background: rgba(0,0,0,0.18);
-            color: white;
-            border-radius: 6px;
-            padding: 0.05rem 0.35rem;
-            margin-left: 0.3rem;
-            font-size: 0.8rem;
-        }
-
-        .section-card {
-            background: var(--brand-card);
-            border: 1px solid var(--brand-border);
-            border-radius: 16px;
-            padding: 1.2rem 1.2rem 1rem 1.2rem;
-            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
-            margin: 0.6rem 0 1rem 0;
-        }
-
-        .section-title {
-            font-size: 1.05rem;
-            font-weight: 700;
-            color: var(--brand-charcoal);
-            margin-bottom: 0.2rem;
-        }
-
-        .section-subtitle {
-            font-size: 0.93rem;
-            color: var(--brand-muted);
-            margin-bottom: 0.2rem;
-        }
-
-        .panel-title {
-            color: var(--brand-charcoal);
-            font-size: 1rem;
-            font-weight: 700;
-            margin-bottom: 0.25rem;
-        }
-
-        .panel-subtitle {
-            color: var(--brand-muted);
-            font-size: 0.88rem;
-            margin-bottom: 0.8rem;
-        }
-
-        div[data-testid="stTextArea"] textarea {
-            background-color: #fbfbfb !important;
-            border: 1px solid var(--brand-border) !important;
-            border-radius: 12px !important;
-            color: #111111 !important;
-            font-size: 0.95rem !important;
-            min-height: 220px !important;
-        }
-
-        div[data-testid="stTextInput"] input,
-        div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-            background-color: #fbfbfb !important;
-            border-radius: 12px !important;
-        }
-
-        .st-key-excel_upload div[data-testid="stFileUploader"] {
-            background: #fbfbfb !important;
-            border: 2px dashed #c8c8c8 !important;
-            border-radius: 12px !important;
-            padding: 24px !important;
-            min-height: 220px !important;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .st-key-excel_upload div[data-testid="stFileUploader"] section {
-            width: 100%;
-        }
-
-        div[data-testid="stTextArea"] label,
-        div[data-testid="stTextInput"] label,
-        div[data-testid="stCheckbox"] label,
-        div[data-testid="stSelectbox"] label,
-        div[data-testid="stMultiSelect"] label,
-        div[data-testid="stFileUploader"] label {
-            color: var(--brand-charcoal) !important;
-            font-weight: 700 !important;
-        }
-
-        .stButton > button,
-        div[data-testid="stDownloadButton"] > button {
-            background: var(--brand-blue) !important;
-            color: white !important;
-            border: none !important;
-            border-radius: 12px !important;
-            font-weight: 700 !important;
-            padding: 0.7rem 1rem !important;
-            box-shadow: 0 8px 18px rgba(31, 78, 161, 0.14);
-        }
-
-        .stButton > button:hover,
-        div[data-testid="stDownloadButton"] > button:hover {
-            background: var(--brand-blue-dark) !important;
-        }
-
-        .metric-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 0.9rem;
-            margin: 1rem 0 1rem 0;
-        }
-
-        .metric-card {
-            background: white;
-            border: 1px solid var(--brand-border);
-            border-radius: 14px;
-            padding: 1rem;
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.04);
-        }
-
-        .metric-label {
-            color: var(--brand-muted);
-            font-size: 0.85rem;
-            margin-bottom: 0.35rem;
-        }
-
-        .metric-value {
-            color: var(--brand-charcoal);
-            font-size: 1.7rem;
-            font-weight: 800;
-            line-height: 1.1;
-        }
-
-        .info-note {
-            background: var(--brand-soft-blue);
-            border: 1px solid #cbd8ef;
-            color: var(--brand-charcoal);
-            border-radius: 12px;
-            padding: 0.85rem 1rem;
-            font-size: 0.93rem;
-            margin: 0.5rem 0 1rem 0;
-        }
-
-        .footer-note {
-            text-align: center;
-            color: var(--brand-muted);
-            font-size: 0.85rem;
-            margin-top: 1rem;
-        }
-
-        div[data-testid="stExpander"] {
-            background: white;
-            border: 1px solid var(--brand-border);
-            border-radius: 12px;
-        }
-
-        @media (max-width: 640px) {
-            .metric-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
-    """,
+    f"<style>{(APP_DIR / 'app_style.css').read_text(encoding='utf-8')}</style>",
     unsafe_allow_html=True,
 )
 
 
-def section_card(title: str, subtitle: str) -> None:
+def step_header(number: int, title: str, subtitle: str = "") -> None:
     st.markdown(
         f"""
-        <div class="section-card">
-            <div class="section-title">{title}</div>
-            <div class="section-subtitle">{subtitle}</div>
+        <div class="step-head">
+            <div class="step-num">{number}</div>
+            <div>
+                <div class="step-title">{title}</div>
+                <div class="step-sub">{subtitle}</div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+
+def short_reason(error: str, status: str) -> str:
+    """One readable line for the failed-items table (the full text is kept below it)."""
+    text = (error or "").lower()
+
+    if "no datasheet link" in text:
+        return "No datasheet link on the supplier's product page"
+    if "datasheet link found but the download failed" in text:
+        return "Datasheet link found, but the download failed"
+    if "button not found" in text or "pdf was not generated" in text:
+        return "ABB page gave no PDF (no print button, or generation timed out)"
+    if status == "Auth required" or "sign-in" in text:
+        return "Phoenix Contact asked for a login"
+    if status == "Not found" or "page-not-found" in text:
+        return "Product not found on the supplier's site"
+    if "did not finish within" in text:
+        return "Phoenix Contact download timed out (try a longer timeout under Advanced)"
+    if "firefox could not run" in text or "chrome/selenium failed" in text:
+        return "The download browser could not start"
+
+    first_line = (error or status or "Unknown error").strip().splitlines()[0]
+    return first_line if len(first_line) <= 90 else first_line[:87] + "..."
+
+
+def use_example() -> None:
+    st.session_state["types_text"] = EXAMPLE_TYPES
+    st.session_state["codes_text"] = EXAMPLE_CODES
+
+
+def clear_pasted() -> None:
+    st.session_state["types_text"] = ""
+    st.session_state["codes_text"] = ""
 
 
 # ---------------------------
@@ -287,17 +94,15 @@ def section_card(title: str, subtitle: str) -> None:
 # ---------------------------
 st.markdown(
     """
-    <div class="hero-card">
-        <div class="hero-badge">DATASHEET AUTOMATION TOOL</div>
+    <div class="hero">
         <div class="hero-title">ABB·PHX·GAV Pack Builder</div>
         <div class="hero-subtitle">
-            Enter item codes from ABB, Phoenix Contact and Carlo Gavazzi, retrieve their
-            datasheets automatically, and generate one consolidated PDF pack in your order.
+            Paste or upload item codes and get one merged datasheet PDF, in your order.
         </div>
         <div class="supplier-chips">
-            <div class="supplier-chip">ABB <code>ABB-</code><code>ABS-</code></div>
-            <div class="supplier-chip">Phoenix Contact <code>PHX-</code></div>
-            <div class="supplier-chip">Carlo Gavazzi <code>GAV-</code></div>
+            <div class="supplier-chip"><span class="dot abb"></span>ABB <code>ABB-</code><code>ABS-</code></div>
+            <div class="supplier-chip"><span class="dot phoenix"></span>Phoenix Contact <code>PHX-</code></div>
+            <div class="supplier-chip"><span class="dot gavazzi"></span>Carlo Gavazzi <code>GAV-</code></div>
         </div>
     </div>
     """,
@@ -306,170 +111,229 @@ st.markdown(
 
 
 # ---------------------------
-# Input section
+# Step 1: add items
 # ---------------------------
-section_card(
-    "Build your PDF pack",
-    "Add codes manually or upload an Excel file with a Type column and a Code column. "
-    "The code prefix picks the supplier, and the Type is written on the cover page "
-    "inserted before each item's datasheet.",
-)
-
 manual_items = []
 excel_items = []
 excel_df = None
 
-input_col1, input_col2 = st.columns(2)
-
-with input_col1:
-    st.markdown(
-        """
-        <div class="panel-title">Paste item types and codes</div>
-        <div class="panel-subtitle">
-            Line 1 of Type belongs to line 1 of Code, and so on. Type can stay empty.
-        </div>
-        """,
-        unsafe_allow_html=True,
+with st.container(border=True, key="step_add"):
+    step_header(
+        1,
+        "Add your items",
+        "Start each code with its supplier prefix: ABB-, PHX- or GAV-.",
     )
 
-    manual_type_col, manual_code_col = st.columns(2)
+    paste_tab, excel_tab = st.tabs([":material/edit_note: Paste codes", ":material/table_chart: Upload Excel"])
 
-    with manual_type_col:
-        types_text = st.text_area(
-            "Type",
-            height=50,
-            placeholder="Example:\nMotion Sensor\nPower Supply\nEnergy Meter",
-        )
+    with paste_tab:
+        type_col, code_col = st.columns(2)
 
-    with manual_code_col:
-        codes_text = st.text_area(
-            "Code",
-            height=50,
-            placeholder="Example:\nABB-TZW510\nPHX-3010110\nGAV-WM30AV53H",
-        )
+        with type_col:
+            types_text = st.text_area(
+                "Type (optional)",
+                key="types_text",
+                height=220,
+                placeholder="Breaker 1000A\nBreaker 800A\nPower supply",
+                help="Printed on the cover page before the datasheet. Line 1 of Type goes with line 1 of Code.",
+            )
 
-    manual_items = items_from_text(types_text, codes_text)
+        with code_col:
+            codes_text = st.text_area(
+                "Code",
+                key="codes_text",
+                height=220,
+                placeholder="ABB-1SDA100720R1\nABB-1SDA100719R1\nPHX-3010110",
+                help="One item per line.",
+            )
 
-with input_col2:
-    st.markdown(
-        """
-        <div class="panel-title">Upload Excel file</div>
-        <div class="panel-subtitle">
-            Drag and drop your Excel file here, or browse to upload it.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+        manual_items = items_from_text(types_text, codes_text)
 
-    with st.container(key="excel_upload"):
+        example_col, clear_col, _ = st.columns([1.2, 1, 3])
+        example_col.button("Fill an example", on_click=use_example, width="stretch")
+        clear_col.button("Clear", on_click=clear_pasted, width="stretch")
+
+    with excel_tab:
         uploaded_excel = st.file_uploader(
-            "Upload Excel file",
+            "Excel file",
             type=["xlsx", "xls"],
-            label_visibility="collapsed",
+            help="One column with the codes, and optionally one with the Type.",
         )
 
-    if uploaded_excel is not None:
-        try:
-            excel_df = read_excel_file(uploaded_excel)
+        if uploaded_excel is not None:
+            try:
+                excel_df = read_excel_file(uploaded_excel)
 
-            if excel_df.empty:
-                st.warning("The uploaded Excel file is empty.")
-            else:
-                columns = list(excel_df.columns)
-                guessed_type_col, guessed_code_col = guess_excel_columns(columns)
+                if excel_df.empty:
+                    st.warning("The uploaded Excel file is empty.")
+                else:
+                    columns = list(excel_df.columns)
+                    guessed_type_col, guessed_code_col = guess_excel_columns(columns)
+                    type_options = [None] + columns
 
-                type_col = st.selectbox(
-                    "Type column",
-                    options=[None] + columns,
-                    index=([None] + columns).index(guessed_type_col),
-                    format_func=lambda column: "(no Type column)" if column is None else str(column),
-                )
-                code_col = st.selectbox(
-                    "Code column",
-                    options=columns,
-                    index=columns.index(guessed_code_col),
-                    format_func=str,
-                )
+                    pick_type_col, pick_code_col = st.columns(2)
+                    type_column = pick_type_col.selectbox(
+                        "Type column",
+                        options=type_options,
+                        index=type_options.index(guessed_type_col),
+                        format_func=lambda column: "(none)" if column is None else str(column),
+                    )
+                    code_column = pick_code_col.selectbox(
+                        "Code column",
+                        options=columns,
+                        index=columns.index(guessed_code_col),
+                        format_func=str,
+                    )
 
-                excel_items = items_from_excel(excel_df, type_col, code_col)
-                st.caption(f"{len(excel_items)} item(s) detected from Excel.")
-        except Exception as e:
-            st.error(f"Could not read Excel file: {e}")
+                    excel_items = items_from_excel(excel_df, type_column, code_column)
+                    st.caption(f"{len(excel_items)} item(s) read from the Excel file.")
 
-# Full-width Excel preview below the input row
-if excel_df is not None and not excel_df.empty:
-    st.caption("Excel preview")
-    st.dataframe(excel_df.head(10), width="stretch")
+                    with st.expander("Preview the first rows"):
+                        st.dataframe(excel_df.head(10), width="stretch")
+            except Exception as e:
+                st.error(f"Could not read Excel file: {e}")
+
+    with st.expander("How codes are read"):
+        st.markdown(
+            """
+- **The prefix picks the supplier:** `ABB-` or `ABS-` for ABB, `PHX-` for Phoenix Contact, `GAV-` for Carlo Gavazzi.
+- **No prefix:** a bare number goes to Phoenix Contact, anything else to ABB. The app warns you when that happens in a list that otherwise has prefixes.
+- **Separators:** one item per line, or separate codes with commas or semicolons. Spaces stay inside a code, so `GAV-MOR 05` is one item.
+- **Order:** the pack follows the order you entered the items, pasted codes first, then the Excel file.
+- **Duplicates:** a repeated code with a Type keeps its own cover and datasheet; a repeated code without a Type appears once.
+            """
+        )
 
 all_items = drop_untyped_duplicates(manual_items + excel_items)
 
-guessed_items = supplier_guesses(all_items)
-if guessed_items:
-    shown = "\n".join(
-        f"- `{item['input']}` will be looked up on **{SUPPLIER_NAMES[item['supplier']]}**"
-        for item in guessed_items[:10]
-    )
-    more = f"\n- ...and {len(guessed_items) - 10} more" if len(guessed_items) > 10 else ""
-    st.warning(
-        f"{len(guessed_items)} code(s) have no supplier prefix, so the supplier was guessed. "
-        f"If a guess is wrong, add `ABB-`, `PHX-` or `GAV-` in front of the code.\n\n{shown}{more}"
+
+# ---------------------------
+# Step 2: check the pack
+# ---------------------------
+with st.container(border=True, key="step_review"):
+    step_header(
+        2,
+        "Check your pack",
+        "Make sure every code went to the right supplier before you build.",
     )
 
-if all_items:
-    counts = Counter(item["supplier"] for item in all_items)
-    summary = " · ".join(
-        f"{name}: {counts[supplier]}" for supplier, name in SUPPLIER_NAMES.items() if counts[supplier]
-    )
-
-    with st.expander(f"Items in your pack ({len(all_items)}) — {summary}", expanded=False):
-        st.dataframe(
-            [
-                {
-                    "#": position,
-                    "Supplier": SUPPLIER_NAMES[item["supplier"]],
-                    "Code": item["code"],
-                    "Type": item["type"],
-                    "Entered as": item["input"],
-                }
-                for position, item in enumerate(all_items, start=1)
-            ],
-            hide_index=True,
-            width="stretch",
+    if not all_items:
+        st.markdown(
+            '<div class="empty-hint">Nothing here yet. Add codes or upload a file above.</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        counts = Counter(item["supplier"] for item in all_items)
+        tiles = "".join(
+            f'<div class="tile"><div class="tile-num">{counts[supplier]}</div>'
+            f'<div class="tile-label"><span class="dot {supplier}"></span>{name}</div></div>'
+            for supplier, name in SUPPLIER_NAMES.items()
+            if counts[supplier]
+        )
+        total_label = "datasheet" if len(all_items) == 1 else "datasheets"
+        st.markdown(
+            f'<div class="tile-row"><div class="tile total"><div class="tile-num">{len(all_items)}</div>'
+            f'<div class="tile-label">{total_label} in the pack</div></div>{tiles}</div>',
+            unsafe_allow_html=True,
         )
 
-st.markdown(
-    """
-    <div class="info-note">
-        Codes are routed by prefix: <b>PHX-</b> to Phoenix Contact, <b>GAV-</b> to Carlo Gavazzi,
-        and <b>ABB-</b>, <b>ABS-</b> or any other prefix to ABB. The merged PDF starts with a
-        table of contents, and each datasheet is preceded by a cover page showing its Type, in
-        the order you entered the codes. Repeated codes with a Type each keep their own cover and
-        datasheet; repeated codes without a Type are included only once.
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+        guessed_items = supplier_guesses(all_items)
+        if guessed_items:
+            shown = "\n".join(
+                f"- `{item['input']}` will be looked up on **{SUPPLIER_NAMES[item['supplier']]}**"
+                for item in guessed_items[:10]
+            )
+            more = f"\n- ...and {len(guessed_items) - 10} more" if len(guessed_items) > 10 else ""
+            st.warning(
+                f"{len(guessed_items)} code(s) have no supplier prefix, so the supplier was guessed. "
+                f"If a guess is wrong, add `ABB-`, `PHX-` or `GAV-` in front of the code.\n\n{shown}{more}"
+            )
+
+        with st.expander(f"Review all {len(all_items)} item(s)", expanded=len(all_items) <= 12):
+            st.dataframe(
+                [
+                    {
+                        "#": position,
+                        "Supplier": SUPPLIER_NAMES[item["supplier"]],
+                        "Code": item["code"],
+                        "Type": item["type"],
+                        "Entered as": item["input"],
+                    }
+                    for position, item in enumerate(all_items, start=1)
+                ],
+                hide_index=True,
+                width="stretch",
+                height=min(38 + 35 * len(all_items), 330),
+            )
 
 
 # ---------------------------
-# Phoenix Contact PDF content
+# Step 3: options
 # ---------------------------
-section_card(
-    "Phoenix Contact PDF content",
-    "Choose what to include in Phoenix Contact datasheets (PHX- codes). By default, "
-    "Technical data and Drawings are selected. ABB and Carlo Gavazzi datasheets are "
-    "downloaded as published.",
-)
+has_phoenix_items = any(item["supplier"] == "phoenix" for item in all_items)
 
 block_label_to_key = {label: key for key, label, _ in PDF_BLOCK_OPTIONS}
 all_block_labels = [label for _, label, _ in PDF_BLOCK_OPTIONS]
 
-selected_block_labels = st.multiselect(
-    "PDF sections",
-    options=all_block_labels,
-    default=DEFAULT_SELECTED_BLOCK_LABELS,
-    help="These selected sections are added to the blocks=... part of both AE and PC PDF URLs.",
-)
+with st.container(border=True, key="step_options"):
+    step_header(3, "Choose options", "The defaults work for most packs.")
+
+    name_col, cover_col = st.columns([3, 2], vertical_alignment="bottom")
+    output_name = name_col.text_input("Output file name", value="datasheet_pack.pdf")
+    include_cover = cover_col.toggle(
+        "Add front cover",
+        value=True,
+        help="A cover page before the table of contents.",
+    )
+
+    with st.expander("Phoenix Contact: what to include in each datasheet", expanded=has_phoenix_items):
+        st.caption(
+            "Applies to PHX- codes only. ABB and Carlo Gavazzi datasheets are downloaded as published."
+        )
+        selected_block_labels = st.multiselect(
+            "Sections to include",
+            options=all_block_labels,
+            default=DEFAULT_SELECTED_BLOCK_LABELS,
+            help="These sections are added to the blocks=... part of both the AE and PC PDF URLs.",
+        )
+        st.caption(
+            "\n".join(f"- **{label}**: {description}" for _, label, description in PDF_BLOCK_OPTIONS)
+        )
+
+    with st.expander("Advanced"):
+        uploaded_cover = st.file_uploader(
+            "Use another front cover (optional)",
+            type=["pdf"],
+            help="Leave empty to use front_cover.pdf from the repository when the front cover is on.",
+        )
+
+        speed_col, timeout_col, workers_col = st.columns(3)
+        max_pages = speed_col.selectbox(
+            "Parallel pages",
+            options=[2, 3, 4, 5],
+            index=1,
+            help="For ABB and Carlo Gavazzi downloads.",
+        )
+        timeout_seconds = timeout_col.slider(
+            "Chrome timeout (s)",
+            min_value=30,
+            max_value=180,
+            value=DEFAULT_TIMEOUT_SECONDS,
+            step=10,
+            help="Phoenix Contact downloads only.",
+        )
+        browser_workers = workers_col.slider(
+            "Chrome workers",
+            min_value=1,
+            max_value=4,
+            value=1,
+            help="Phoenix Contact downloads only. Use 1 on Streamlit Cloud; 2 only if the host has enough RAM.",
+        )
+        headless = st.checkbox(
+            "Run Chrome headless",
+            value=True,
+            help="Keep on for Streamlit Cloud. Turn off locally to watch Chrome.",
+        )
 
 selected_blocks = [
     block_label_to_key[label]
@@ -477,186 +341,148 @@ selected_blocks = [
     if label in selected_block_labels
 ]
 
-with st.expander("Section details", expanded=False):
-    for key, label, description in PDF_BLOCK_OPTIONS:
-        st.markdown(f"**{label}** (`{key}`): {description}")
-
 
 # ---------------------------
-# Pack settings
+# Step 4: build and download
 # ---------------------------
-section_card(
-    "Pack settings",
-    "Front cover, output file name and download speed.",
-)
-
-settings_col1, settings_col2 = st.columns(2)
-
-with settings_col1:
-    output_name = st.text_input("Output file name", value="datasheet_pack.pdf")
-    include_cover = st.checkbox("Add front cover", value=True)
-
-with settings_col2:
-    max_pages = st.selectbox(
-        "Parallel pages (ABB and Carlo Gavazzi)",
-        options=[2, 3, 4, 5],
-        index=1,
-    )
-    uploaded_cover = st.file_uploader(
-        "Use another front cover (optional)",
-        type=["pdf"],
-        help="Leave empty to use front_cover.pdf from the repository when the front cover is enabled.",
-    )
-
-with st.expander("Advanced Chrome settings (Phoenix Contact)", expanded=False):
-    c1, c2 = st.columns(2)
-
-    with c1:
-        headless = st.checkbox(
-            "Run Chrome headless",
-            value=True,
-            help="Use True on Streamlit Cloud. Use False locally to see Chrome.",
-        )
-
-        timeout_seconds = st.slider(
-            "Timeout",
-            min_value=30,
-            max_value=180,
-            value=DEFAULT_TIMEOUT_SECONDS,
-            step=10,
-        )
-
-    with c2:
-        browser_workers = st.slider(
-            "Chrome workers",
-            min_value=1,
-            max_value=4,
-            value=1,
-            help="Use one worker on Streamlit Cloud. Use two only if your host has enough RAM.",
-        )
-
-run_clicked = st.button("Build PDF Pack", type="primary", width="stretch")
-
-
-# ---------------------------
-# Action / Processing
-# ---------------------------
-if run_clicked:
-    st.session_state.pop("pack", None)
-    has_phoenix_items = any(item["supplier"] == "phoenix" for item in all_items)
-
-    if not all_items:
-        st.error("Please enter item codes manually or upload an Excel file.")
-        st.stop()
-
-    if has_phoenix_items and not selected_blocks:
-        st.error("Please select at least one Phoenix Contact PDF section.")
-        st.stop()
-
-    front_cover_bytes, cover_problem = get_front_cover_bytes(uploaded_cover, include_cover)
-
-    if cover_problem and uploaded_cover is not None:
-        st.error(cover_problem)
-        st.stop()
-
-    if cover_problem:
-        st.warning(cover_problem)
-
-    progress_bar = st.progress(0.0)
-    status_text = st.empty()
-
-    def show_progress(finished: int, total: int, message: str) -> None:
-        progress_bar.progress(finished / total if total else 1.0)
-        status_text.info(f"{message} ({finished}/{total} done)")
-
-    with st.spinner("Downloading datasheets and building the merged pack..."):
-        try:
-            results = download_all(
-                all_items,
-                phoenix_blocks=selected_blocks,
-                chrome_settings={
-                    "headless": headless,
-                    "timeout_seconds": timeout_seconds,
-                    "browser_workers": browser_workers,
-                },
-                max_concurrent_pages=min(max_pages, len(all_items)),
-                on_progress=show_progress,
-            )
-            pack = build_pack(all_items, results, front_cover_bytes)
-            pack["file_name"] = ensure_pdf_filename(output_name)
-            st.session_state["pack"] = pack
-        except Exception as e:
-            st.error(f"Processing failed: {e}")
-
-    progress_bar.empty()
-    status_text.empty()
-
-
-# ---------------------------
-# Results (kept across reruns so every download button keeps working)
-# ---------------------------
-pack = st.session_state.get("pack")
-
-if pack:
-    st.markdown(
-        f"""
-        <div class="metric-grid">
-            <div class="metric-card">
-                <div class="metric-label">Submitted</div>
-                <div class="metric-value">{pack["submitted_count"]}</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Downloaded</div>
-                <div class="metric-value">{pack["downloaded_count"]}</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Failed</div>
-                <div class="metric-value">{pack["failed_count"]}</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+def render_results(pack: dict) -> None:
+    downloaded, submitted = pack["downloaded_count"], pack["submitted_count"]
 
     if pack["merged_pdf"] is None:
-        st.error("No PDFs were downloaded, so no merged file could be created.")
+        st.error("No datasheets could be downloaded, so no pack was created. See the reasons below.")
+    elif pack["failed_count"]:
+        st.warning(
+            f"Your pack is ready with {downloaded} of {submitted} datasheets. "
+            f"{pack['failed_count']} could not be downloaded (see below)."
+        )
     else:
-        st.success("Your consolidated datasheet pack is ready.")
+        st.success(f"Your pack is ready: all {submitted} datasheets downloaded.")
 
-        st.download_button(
-            label="Download Merged PDF",
+    pdf_col, csv_col = st.columns([3, 2])
+
+    if pack["merged_pdf"] is not None:
+        pdf_col.download_button(
+            "Download merged PDF",
             data=pack["merged_pdf"],
             file_name=pack["file_name"],
             mime="application/pdf",
+            type="primary",
+            icon=":material/download:",
+            width="stretch",
+            on_click="ignore",
+        )
+
+    report_rows = pack["success_rows"] + pack["failed_rows"]
+    if report_rows:
+        report_df = pd.DataFrame(report_rows).sort_values("#")
+        csv_col.download_button(
+            "Download report (CSV)",
+            data=report_df.to_csv(index=False).encode("utf-8"),
+            file_name="datasheet_download_report.csv",
+            mime="text/csv",
+            icon=":material/table_view:",
             width="stretch",
             on_click="ignore",
         )
 
     if pack["failed_rows"]:
-        with st.expander("Items not downloaded", expanded=True):
-            st.dataframe(pack["failed_rows"], hide_index=True, width="stretch")
+        with st.expander(f"{pack['failed_count']} item(s) not downloaded", expanded=True):
+            st.dataframe(
+                [
+                    {
+                        "#": row["#"],
+                        "Supplier": row["Supplier"],
+                        "Code": row["Code"],
+                        "Type": row["Type"],
+                        "Reason": short_reason(row["Error"], row["Status"]),
+                    }
+                    for row in pack["failed_rows"]
+                ],
+                hide_index=True,
+                width="stretch",
+                height=min(38 + 35 * len(pack["failed_rows"]), 330),
+            )
+            st.caption("To retry only these, fix any typos and paste them back into step 1:")
+            st.code("\n".join(pack["retry_codes"]), language=None)
+
+        with st.expander("Full error messages"):
+            st.dataframe(
+                [
+                    {"#": row["#"], "Code": row["Code"], "Error": row["Error"], "Source": row["Source"]}
+                    for row in pack["failed_rows"]
+                ],
+                hide_index=True,
+                width="stretch",
+            )
 
     if pack["success_rows"]:
-        with st.expander("Downloaded items", expanded=False):
+        with st.expander(f"{downloaded} item(s) downloaded"):
             st.dataframe(pack["success_rows"], hide_index=True, width="stretch")
 
-    report_rows = pack["success_rows"] + pack["failed_rows"]
-    if report_rows:
-        report_df = pd.DataFrame(report_rows).sort_values("#")
-        st.download_button(
-            "Download Report CSV",
-            data=report_df.to_csv(index=False).encode("utf-8"),
-            file_name="datasheet_download_report.csv",
-            mime="text/csv",
-            width="stretch",
-            on_click="ignore",
-        )
+
+with st.container(border=True, key="step_build"):
+    step_header(4, "Build and download", "Downloading takes a few seconds per datasheet.")
+
+    item_word = "datasheet" if len(all_items) == 1 else "datasheets"
+    run_clicked = st.button(
+        f"Build pack · {len(all_items)} {item_word}" if all_items else "Build pack",
+        type="primary",
+        width="stretch",
+        disabled=not all_items,
+        key="build_button",
+    )
+
+    if not all_items:
+        st.caption("Add at least one code in step 1 to enable this button.")
+
+    if run_clicked:
+        st.session_state.pop("pack", None)
+        front_cover_bytes, cover_problem = get_front_cover_bytes(uploaded_cover, include_cover)
+
+        if has_phoenix_items and not selected_blocks:
+            st.error("Pick at least one Phoenix Contact section in step 3 (Phoenix Contact options).")
+        elif cover_problem and uploaded_cover is not None:
+            st.error(cover_problem)
+        else:
+            if cover_problem:
+                st.warning(cover_problem)
+
+            progress_bar = st.progress(0.0)
+            status_text = st.empty()
+
+            def show_progress(finished: int, total: int, message: str) -> None:
+                progress_bar.progress(finished / total if total else 1.0)
+                status_text.info(f"{message} ({finished}/{total} done)")
+
+            with st.spinner("Downloading datasheets and building the pack..."):
+                try:
+                    results = download_all(
+                        all_items,
+                        phoenix_blocks=selected_blocks,
+                        chrome_settings={
+                            "headless": headless,
+                            "timeout_seconds": timeout_seconds,
+                            "browser_workers": browser_workers,
+                        },
+                        max_concurrent_pages=min(max_pages, len(all_items)),
+                        on_progress=show_progress,
+                    )
+                    pack = build_pack(all_items, results, front_cover_bytes)
+                    pack["file_name"] = ensure_pdf_filename(output_name)
+                    st.session_state["pack"] = pack
+                except Exception as e:
+                    st.error(f"Processing failed: {e}")
+
+            progress_bar.empty()
+            status_text.empty()
+
+    # Results stay on screen across reruns, so a download button never wipes them
+    pack = st.session_state.get("pack")
+    if pack:
+        render_results(pack)
 
 st.markdown(
-    """
-    <div class="footer-note">
-        Built for fast retrieval and packaging of ABB, Phoenix Contact and Carlo Gavazzi product documentation.
-    </div>
-    """,
+    '<div class="footer-note">Built for fast retrieval and packaging of ABB, Phoenix Contact '
+    "and Carlo Gavazzi product documentation.</div>",
     unsafe_allow_html=True,
 )

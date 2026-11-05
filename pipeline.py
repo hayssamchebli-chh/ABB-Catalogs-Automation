@@ -18,7 +18,7 @@ from playwright.async_api import async_playwright
 
 from abb_datasheets import abb_product_url, download_abb_pdf_from_page, prepare_shared_context
 from gavazzi_datasheets import download_gavazzi_pdf_from_page, gavazzi_product_url
-from item_codes import SUPPLIER_NAMES
+from item_codes import SUPPLIER_NAMES, SUPPLIER_PREFIX
 from pdf_pack import load_cover_template_bytes, merge_items_with_covers
 from phoenix_datasheets import download_phoenix_datasheets
 
@@ -273,6 +273,7 @@ def build_pack(items: List[dict], results: Dict[JobKey, dict], front_cover_bytes
     merge_items = []
     success_rows = []
     failed_rows = []
+    retry_codes = []
 
     for position, item in enumerate(items, start=1):
         result = results.get((item["supplier"], item["code"])) or make_result(False, error="Not downloaded.")
@@ -295,6 +296,9 @@ def build_pack(items: List[dict], results: Dict[JobKey, dict], front_cover_bytes
             success_rows.append({**row, "Source": result["source_url"]})
         else:
             failed_rows.append({**row, "Error": result["error"], "Source": result["source_url"]})
+            retry_code = f"{SUPPLIER_PREFIX[item['supplier']]}{item['code']}"
+            if retry_code not in retry_codes:
+                retry_codes.append(retry_code)
 
     merged_pdf = None
     if merge_items:
@@ -304,6 +308,7 @@ def build_pack(items: List[dict], results: Dict[JobKey, dict], front_cover_bytes
         "merged_pdf": merged_pdf,
         "success_rows": success_rows,
         "failed_rows": failed_rows,
+        "retry_codes": retry_codes,
         "downloaded_count": len(merge_items),
         "failed_count": len(failed_rows),
         "submitted_count": len(items),

@@ -27,6 +27,9 @@ PREFIX_TO_SUPPLIER = {
 }
 DEFAULT_SUPPLIER = "abb"
 
+# Prefix that sends a code back to its supplier when it is typed again
+SUPPLIER_PREFIX = {"abb": "ABB-", "phoenix": "PHX-", "gavazzi": "GAV-"}
+
 EMPTY_VALUES = {"", "nan", "none", "null"}
 
 

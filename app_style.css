@@ -1,0 +1,240 @@
+:root {
+    --brand-blue: #1f4ea1;
+    --brand-blue-dark: #163a7a;
+    --ink: #1b2430;
+    --muted: #5f6b7a;
+    --line: #dde2ea;
+    --bg: #f4f6fa;
+    --soft-blue: #eef3fb;
+    --soft-blue-line: #cfdcf3;
+    --abb: #d7261e;
+    --phx: #6fae1c;
+    --gav: #e08a00;
+}
+
+.stApp {
+    background-color: var(--bg);
+}
+
+.block-container {
+    max-width: 960px;
+    padding-top: 4.5rem;
+    padding-bottom: 3rem;
+}
+
+/* ---------- Header ---------- */
+.hero {
+    background: linear-gradient(135deg, var(--brand-blue) 0%, var(--brand-blue-dark) 100%);
+    color: #ffffff;
+    border-radius: 16px;
+    padding: 1.3rem 1.5rem 1.2rem 1.5rem;
+    box-shadow: 0 10px 24px rgba(31, 78, 161, 0.18);
+    margin-bottom: 1rem;
+}
+
+.hero-title {
+    font-size: 1.75rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.hero-subtitle {
+    color: #dbe6f8;
+    font-size: 0.98rem;
+    margin-top: 0.3rem;
+}
+
+.supplier-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.95rem;
+}
+
+.supplier-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.26);
+    border-radius: 999px;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.supplier-chip code {
+    background: rgba(0, 0, 0, 0.2);
+    color: #ffffff;
+    border-radius: 6px;
+    padding: 0.05rem 0.35rem;
+    font-size: 0.78rem;
+}
+
+.dot {
+    display: inline-block;
+    width: 0.62rem;
+    height: 0.62rem;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+
+.dot.abb { background: var(--abb); }
+.dot.phoenix { background: var(--phx); }
+.dot.gavazzi { background: var(--gav); }
+
+/* ---------- Step cards ---------- */
+[class*="st-key-step_"] {
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 4px 14px rgba(20, 40, 80, 0.05);
+    padding: 0.55rem 0.7rem 0.9rem 0.7rem;
+    margin-bottom: 0.9rem;
+}
+
+.step-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.8rem;
+    margin: 0.35rem 0 0.9rem 0;
+}
+
+.step-num {
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    width: 1.95rem;
+    height: 1.95rem;
+    border-radius: 50%;
+    background: var(--brand-blue);
+    color: #ffffff;
+    font-size: 0.95rem;
+    font-weight: 800;
+}
+
+.step-title {
+    color: var(--ink);
+    font-size: 1.1rem;
+    font-weight: 800;
+    line-height: 1.3;
+}
+
+.step-sub {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-top: 0.1rem;
+}
+
+/* ---------- Review tiles ---------- */
+.tile-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 0.6rem;
+    margin: 0.2rem 0 0.9rem 0;
+}
+
+.tile {
+    background: var(--soft-blue);
+    border: 1px solid var(--soft-blue-line);
+    border-radius: 12px;
+    padding: 0.6rem 0.85rem;
+}
+
+.tile.total {
+    background: var(--brand-blue);
+    border-color: var(--brand-blue);
+    color: #ffffff;
+}
+
+.tile-num {
+    font-size: 1.7rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.tile-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--muted);
+    font-size: 0.84rem;
+    font-weight: 600;
+    margin-top: 0.1rem;
+}
+
+.tile.total .tile-label {
+    color: #dbe6f8;
+}
+
+.tile .dot {
+    box-shadow: none;
+}
+
+.empty-hint {
+    border: 1.5px dashed var(--line);
+    border-radius: 12px;
+    color: var(--muted);
+    font-size: 0.93rem;
+    padding: 1.1rem;
+    text-align: center;
+}
+
+/* ---------- Widgets ---------- */
+div[data-testid="stTextArea"] textarea {
+    background-color: #fbfcfe !important;
+    border-radius: 10px !important;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+    font-size: 0.9rem !important;
+}
+
+div[data-testid="stTextInput"] input {
+    border-radius: 10px !important;
+}
+
+div[data-testid="stTextArea"] label p,
+div[data-testid="stTextInput"] label p,
+div[data-testid="stSelectbox"] label p,
+div[data-testid="stMultiSelect"] label p,
+div[data-testid="stFileUploader"] label p {
+    font-weight: 700;
+}
+
+div[data-testid="stFileUploader"] section {
+    border: 2px dashed #c4cddb;
+    border-radius: 12px;
+}
+
+div[data-testid="stExpander"] {
+    border-radius: 12px;
+}
+
+.stButton > button,
+div[data-testid="stDownloadButton"] > button {
+    border-radius: 10px;
+    font-weight: 700;
+}
+
+.st-key-build_button button {
+    padding: 0.8rem 1rem;
+    font-size: 1.05rem;
+    box-shadow: 0 8px 18px rgba(31, 78, 161, 0.18);
+}
+
+.footer-note {
+    color: var(--muted);
+    font-size: 0.82rem;
+    margin-top: 1.2rem;
+    text-align: center;
+}
+
+@media (max-width: 640px) {
+    .hero-title {
+        font-size: 1.4rem;
+    }
+
+    .block-container {
+        padding-left: 0.9rem;
+        padding-right: 0.9rem;
+    }
+}
