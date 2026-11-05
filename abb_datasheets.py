@@ -168,7 +168,7 @@ async def describe_page_buttons(page) -> str:
 
 def first_line(error: Exception) -> str:
     """Playwright errors carry a long call log; keep the message only."""
-    return (str(error).strip().splitlines() or [type(error).__name__])[0][:700]
+    return (str(error).strip().splitlines() or [type(error).__name__])[0][:1200]
 
 
 class DownloadWatcher:
@@ -330,7 +330,7 @@ async def download_abb_pdf_from_page(page, item_code: str, output_dir: str, clic
             if kind is None:
                 raise RuntimeError(
                     f"Timeout {DOWNLOAD_TIMEOUT_MS}ms exceeded: nothing was downloaded after "
-                    f"clicking '{clicked}'. {watcher.summary()}"
+                    f"clicking '{clicked}'. {watcher.summary()} Now: {await describe_page_buttons(page)}"
                 )
 
             if kind == "download":
