@@ -19,3 +19,5 @@ libxext6
 libdbus-1-3
 libxcb-shm0
 libgtk-3-0
+chromium
+chromium-driver
