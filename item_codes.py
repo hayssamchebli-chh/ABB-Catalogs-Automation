@@ -5,6 +5,7 @@ or GAV-WM30AV53H. The prefix decides which supplier website the datasheet is
 downloaded from; the rest is the supplier's own product code.
 """
 import re
+from io import BytesIO
 from typing import Iterable, List, Optional, Tuple
 
 import pandas as pd
@@ -168,6 +169,31 @@ def items_from_text(types_text: str, codes_text: str) -> List[dict]:
         rows.append((type_text, code_line))
 
     return build_items(rows)
+
+
+# Rows shown on the page as a sample sheet and written into the downloadable template
+EXCEL_EXAMPLE_HEADERS = ("Type", "Code")
+EXCEL_EXAMPLE_ROWS = (
+    ("Breaker 1000A", "ABS-1SDA100720R1"),
+    ("Power supply", "PHX-3010110"),
+    ("Energy meter", "GAV-WM30AV53H"),
+    ("", "GAV-ER8"),
+)
+
+
+def build_excel_template() -> bytes:
+    """An .xlsx with the expected Type and Code columns and a few example rows."""
+    buffer = BytesIO()
+
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        pd.DataFrame(EXCEL_EXAMPLE_ROWS, columns=list(EXCEL_EXAMPLE_HEADERS)).to_excel(
+            writer, index=False, sheet_name="Items"
+        )
+        sheet = writer.sheets["Items"]
+        sheet.column_dimensions["A"].width = 28
+        sheet.column_dimensions["B"].width = 28
+
+    return buffer.getvalue()
 
 
 def read_excel_file(uploaded_file) -> pd.DataFrame:

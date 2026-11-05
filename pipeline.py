@@ -34,6 +34,25 @@ ProgressCallback = Callable[[int, int, str], None]
 JobKey = Tuple[str, str]  # (supplier, code)
 
 
+def format_duration(seconds: float) -> str:
+    """42.3 -> "42 s", 67 -> "1 min 07 s", 3725 -> "1 h 02 min"."""
+    if seconds < 1:
+        return "under 1 s"
+    if seconds < 10:
+        return f"{seconds:.1f} s"
+
+    total = int(round(seconds))
+    if total < 60:
+        return f"{total} s"
+
+    minutes, secs = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes} min {secs:02d} s"
+
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes:02d} min"
+
+
 def firefox_installed() -> bool:
     return any(BROWSERS_DIR.glob("firefox-*/firefox/firefox"))
 

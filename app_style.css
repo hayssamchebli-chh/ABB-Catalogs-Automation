@@ -245,6 +245,69 @@
     display: none;
 }
 
+/* ---------- Excel format guide: a small spreadsheet picture ---------- */
+.sheet-example-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-bottom: 1rem; /* Streamlit trims 1rem off the end of raw HTML blocks */
+}
+
+[data-testid="stMarkdownContainer"] .sheet-example {
+    width: 100%;
+    margin: 0;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+}
+
+[data-testid="stMarkdownContainer"] .sheet-example th,
+[data-testid="stMarkdownContainer"] .sheet-example td {
+    border: 1px solid var(--line);
+    border-width: 0 1px 1px 0;
+    padding: 0.35rem 0.75rem;
+    text-align: left;
+    white-space: nowrap;
+}
+
+[data-testid="stMarkdownContainer"] .sheet-example th {
+    width: 2.4rem;
+    background: #f1f4f9;
+    color: var(--muted);
+    font-weight: 600;
+    text-align: center;
+}
+
+[data-testid="stMarkdownContainer"] .sheet-example thead th {
+    border-top: 0;
+}
+
+[data-testid="stMarkdownContainer"] .sheet-example td {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+[data-testid="stMarkdownContainer"] .sheet-example tr.head td {
+    background: var(--soft-blue);
+    color: var(--brand-blue-dark);
+    font-family: inherit;
+    font-weight: 800;
+}
+
+[data-testid="stMarkdownContainer"] .sheet-example tr:last-child th,
+[data-testid="stMarkdownContainer"] .sheet-example tr:last-child td {
+    border-bottom: 0;
+}
+
+[data-testid="stMarkdownContainer"] .sheet-example th:last-child,
+[data-testid="stMarkdownContainer"] .sheet-example td:last-child {
+    border-right: 0;
+}
+
+/* Inline code in the guides: brand blue instead of Streamlit's default green */
+[class*="st-key-step_"] [data-testid="stExpander"] [data-testid="stMarkdownContainer"] code {
+    background: var(--soft-blue);
+    color: var(--brand-blue-dark);
+}
+
 /* ---------- Review tiles ---------- */
 .tile-row {
     display: grid;
@@ -372,6 +435,16 @@ div[data-testid="stDownloadButton"] > button {
 
     [class*="st-key-step_"] [role="tab"]::after {
         font-size: 0.78rem;
+    }
+
+    [data-testid="stMarkdownContainer"] .sheet-example th,
+    [data-testid="stMarkdownContainer"] .sheet-example td {
+        padding: 0.3rem 0.45rem;
+        font-size: 0.78rem;
+    }
+
+    [data-testid="stMarkdownContainer"] .sheet-example th {
+        width: 1.8rem;
     }
 
     .block-container {
