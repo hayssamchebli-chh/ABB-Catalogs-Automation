@@ -1,3 +1,5 @@
+import html
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -5,7 +7,10 @@ import pandas as pd
 import streamlit as st
 
 from item_codes import (
+    EXCEL_EXAMPLE_HEADERS,
+    EXCEL_EXAMPLE_ROWS,
     SUPPLIER_NAMES,
+    build_excel_template,
     drop_untyped_duplicates,
     guess_excel_columns,
     items_from_excel,
@@ -19,7 +24,7 @@ from phoenix_datasheets import (
     DEFAULT_TIMEOUT_SECONDS,
     PDF_BLOCK_OPTIONS,
 )
-from pipeline import build_pack, download_all
+from pipeline import build_pack, download_all, format_duration
 
 APP_DIR = Path(__file__).resolve().parent
 
@@ -77,6 +82,23 @@ def short_reason(error: str, status: str) -> str:
 
     first_line = (error or status or "Unknown error").strip().splitlines()[0]
     return first_line if len(first_line) <= 90 else first_line[:87] + "..."
+
+
+def sample_sheet_html() -> str:
+    """A small spreadsheet picture: column letters, row numbers, header row, example rows."""
+    header_cells = "".join(f"<td>{html.escape(name)}</td>" for name in EXCEL_EXAMPLE_HEADERS)
+    body_rows = "".join(
+        f"<tr><th>{number}</th>"
+        + "".join(f"<td>{html.escape(value)}</td>" for value in row)
+        + "</tr>"
+        for number, row in enumerate(EXCEL_EXAMPLE_ROWS, start=2)
+    )
+    return (
+        '<div class="sheet-example-wrap"><table class="sheet-example">'
+        "<thead><tr><th></th><th>A</th><th>B</th></tr></thead>"
+        f'<tbody><tr class="head"><th>1</th>{header_cells}</tr>{body_rows}</tbody>'
+        "</table></div>"
+    )
 
 
 def use_example() -> None:
@@ -154,9 +176,32 @@ with st.container(border=True, key="step_add"):
         clear_col.button("Clear", on_click=clear_pasted, width="stretch")
 
     with excel_tab:
+        with st.expander(
+            "What should the Excel file look like?",
+            expanded=st.session_state.get("excel_file") is None,
+        ):
+            st.markdown(sample_sheet_html(), unsafe_allow_html=True)
+            st.markdown(
+                """
+- **Row 1 holds the column names**, and only the first sheet is read.
+- **Name the columns `Type` and `Code`.** Type is optional: it is printed on the item's cover page and in the table of contents.
+- **Other names work too.** The app looks for a code column named like `Code`, `Item`, `Order No`, `Material`, `Part Number` or `Product Number`, and a type column containing `Type`. If none match, column 1 is the Type and column 2 the Code. You can change the choice after uploading.
+- **Start every code with its supplier prefix** (`ABB-`, `PHX-`, `GAV-`), one item per row. The pack follows the row order.
+                """
+            )
+            st.download_button(
+                "Download an Excel template",
+                data=build_excel_template(),
+                file_name="datasheet_items_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                icon=":material/download:",
+                on_click="ignore",
+            )
+
         uploaded_excel = st.file_uploader(
             "Excel file",
             type=["xlsx", "xls"],
+            key="excel_file",
             help="One column with the codes, and optionally one with the Type.",
         )
 
@@ -347,16 +392,18 @@ selected_blocks = [
 # ---------------------------
 def render_results(pack: dict) -> None:
     downloaded, submitted = pack["downloaded_count"], pack["submitted_count"]
+    seconds = pack.get("build_seconds")
+    took = f" in {format_duration(seconds)}" if seconds is not None else ""
 
     if pack["merged_pdf"] is None:
         st.error("No datasheets could be downloaded, so no pack was created. See the reasons below.")
     elif pack["failed_count"]:
         st.warning(
-            f"Your pack is ready with {downloaded} of {submitted} datasheets. "
+            f"Your pack is ready with {downloaded} of {submitted} datasheets, built{took}. "
             f"{pack['failed_count']} could not be downloaded (see below)."
         )
     else:
-        st.success(f"Your pack is ready: all {submitted} datasheets downloaded.")
+        st.success(f"Your pack is ready: all {submitted} datasheets downloaded and built{took}.")
 
     pdf_col, csv_col = st.columns([3, 2])
 
@@ -449,10 +496,12 @@ with st.container(border=True, key="step_build"):
 
             progress_bar = st.progress(0.0)
             status_text = st.empty()
+            started = time.perf_counter()
 
             def show_progress(finished: int, total: int, message: str) -> None:
+                elapsed = format_duration(time.perf_counter() - started)
                 progress_bar.progress(finished / total if total else 1.0)
-                status_text.info(f"{message} ({finished}/{total} done)")
+                status_text.info(f"{message} ({finished}/{total} done, {elapsed} so far)")
 
             with st.spinner("Downloading datasheets and building the pack..."):
                 try:
@@ -469,6 +518,7 @@ with st.container(border=True, key="step_build"):
                     )
                     pack = build_pack(all_items, results, front_cover_bytes)
                     pack["file_name"] = ensure_pdf_filename(output_name)
+                    pack["build_seconds"] = time.perf_counter() - started
                     st.session_state["pack"] = pack
                 except Exception as e:
                     st.error(f"Processing failed: {e}")
