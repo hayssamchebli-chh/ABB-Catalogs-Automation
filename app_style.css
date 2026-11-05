@@ -177,6 +177,10 @@
     color: var(--muted);
     font-size: 0.93rem;
     padding: 1.1rem;
+    /* Streamlit trims 1rem off the bottom of every markdown block to cancel a
+       paragraph's margin; a raw HTML box has none, so give it back or the box
+       spills out of its card. */
+    margin-bottom: 1rem;
     text-align: center;
 }
 
