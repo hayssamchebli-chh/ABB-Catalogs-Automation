@@ -1,4 +1,5 @@
 import html
+import re
 import time
 from collections import Counter
 from pathlib import Path
@@ -72,6 +73,13 @@ def short_reason(error: str, status: str) -> str:
     if "print/datasheet button not found" in text:
         return "No print button found on the ABB product page"
     if "pdf was not generated" in text:
+        error_status = re.search(r"(?:after the click: |\| )([45]\d\d) \S+ http", text)
+        if error_status:
+            return f"ABB's PDF service answered with an error (HTTP {error_status.group(1)})"
+        if "no request that looks like pdf generation" in text:
+            return "Clicking the print button did nothing (no PDF request was sent)"
+        if "opened a new tab" in text:
+            return "The print button opened a new tab, but no PDF arrived"
         if "timeout" in text:
             return "ABB did not send the PDF in time (it was tried again at the end of the run)"
         return "ABB gave no PDF for this item"
