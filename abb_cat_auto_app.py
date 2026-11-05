@@ -69,8 +69,12 @@ def short_reason(error: str, status: str) -> str:
         return "No datasheet link on the supplier's product page"
     if "datasheet link found but the download failed" in text:
         return "Datasheet link found, but the download failed"
-    if "button not found" in text or "pdf was not generated" in text:
-        return "ABB page gave no PDF (no print button, or generation timed out)"
+    if "print/datasheet button not found" in text:
+        return "No print button found on the ABB product page"
+    if "pdf was not generated" in text:
+        if "timeout" in text:
+            return "ABB did not send the PDF in time (it was tried again at the end of the run)"
+        return "ABB gave no PDF for this item"
     if status == "Auth required" or "sign-in" in text:
         return "Phoenix Contact asked for a login"
     if status == "Not found" or "page-not-found" in text:
@@ -396,7 +400,8 @@ def render_results(pack: dict) -> None:
     took = f" in {format_duration(seconds)}" if seconds is not None else ""
 
     if pack["merged_pdf"] is None:
-        st.error("No datasheets could be downloaded, so no pack was created. See the reasons below.")
+        after = f" after {format_duration(seconds)}" if seconds is not None and seconds >= 1 else ""
+        st.error(f"No datasheets could be downloaded{after}, so no pack was created. See the reasons below.")
     elif pack["failed_count"]:
         st.warning(
             f"Your pack is ready with {downloaded} of {submitted} datasheets, built{took}. "

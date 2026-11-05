@@ -12,6 +12,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from pdf_pack import is_valid_pdf_bytes
 
 BASE_URL = "https://new.abb.com/products/{item_code}"
+DOWNLOAD_TIMEOUT_MS = 90000  # how long one click may wait for ABB to generate and send the PDF
 
 
 def abb_product_url(item_code: str) -> str:
@@ -164,6 +165,11 @@ async def describe_page_buttons(page) -> str:
         return f"could not inspect page ({e})"
 
 
+def first_line(error: Exception) -> str:
+    """Playwright errors carry a long call log; keep the message only."""
+    return (str(error).strip().splitlines() or [type(error).__name__])[0][:300]
+
+
 async def download_abb_pdf_from_page(page, item_code: str, output_dir: str, click_attempts: int = 3):
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -189,7 +195,7 @@ async def download_abb_pdf_from_page(page, item_code: str, output_dir: str, clic
                     + await describe_page_buttons(page)
                 )
 
-            async with page.expect_download(timeout=90000) as download_info:
+            async with page.expect_download(timeout=DOWNLOAD_TIMEOUT_MS) as download_info:
                 try:
                     await button.click(timeout=10000)
                 except Exception:
@@ -201,7 +207,7 @@ async def download_abb_pdf_from_page(page, item_code: str, output_dir: str, clic
             break
         except Exception as e:
             last_error = e
-            print(f"{item_code}: no download on attempt {attempt}/{click_attempts} ({e})")
+            print(f"{item_code}: no download on attempt {attempt}/{click_attempts} ({first_line(e)})")
 
             if attempt < click_attempts:
                 try:
@@ -212,9 +218,9 @@ async def download_abb_pdf_from_page(page, item_code: str, output_dir: str, clic
 
     if download is None:
         raise RuntimeError(
-            f"PDF was not generated after {click_attempts} attempts. The ABB PDF "
+            f"PDF was not generated after {click_attempts} attempt{'' if click_attempts == 1 else 's'}. The ABB PDF "
             f"generator can be slow for this product; running the same code again "
-            f"usually works because the PDF gets cached. Last error: {last_error}"
+            f"usually works because the PDF gets cached. Last error: {first_line(last_error)}"
         )
 
     suggested_name = download.suggested_filename

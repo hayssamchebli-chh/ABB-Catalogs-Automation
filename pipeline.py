@@ -111,16 +111,20 @@ def product_url(supplier: str, code: str) -> str:
 # ---------------------------
 # Firefox: ABB + Carlo Gavazzi
 # ---------------------------
-async def download_one_with_firefox(page, supplier: str, code: str, output_dir: str) -> dict:
+async def download_one_with_firefox(
+    page, supplier: str, code: str, output_dir: str, abb_click_attempts: int = 3
+) -> dict:
     if supplier == "abb":
-        _, pdf_bytes = await download_abb_pdf_from_page(page, code, output_dir)
+        _, pdf_bytes = await download_abb_pdf_from_page(page, code, output_dir, click_attempts=abb_click_attempts)
         return make_result(True, pdf_bytes, source_url=abb_product_url(code))
 
     pdf_bytes, datasheet_url = await download_gavazzi_pdf_from_page(page, code)
     return make_result(True, pdf_bytes, source_url=datasheet_url)
 
 
-async def firefox_worker(context, queue: asyncio.Queue, results: dict, output_dir: str, on_result):
+async def firefox_worker(
+    context, queue: asyncio.Queue, results: dict, output_dir: str, on_result, abb_click_attempts: int
+):
     while True:
         job = await queue.get()
         if job is None:
@@ -132,7 +136,7 @@ async def firefox_worker(context, queue: asyncio.Queue, results: dict, output_di
 
         try:
             page = await context.new_page()
-            result = await download_one_with_firefox(page, supplier, code, output_dir)
+            result = await download_one_with_firefox(page, supplier, code, output_dir, abb_click_attempts)
         except Exception as e:
             result = make_result(False, error=str(e), source_url=product_url(supplier, code))
         finally:
@@ -148,16 +152,41 @@ async def firefox_worker(context, queue: asyncio.Queue, results: dict, output_di
             on_result(supplier, code, result)
 
 
-async def download_with_firefox(
+async def run_firefox_pass(
+    context,
     jobs: List[JobKey],
+    results: Dict[JobKey, dict],
+    output_dir: str,
     max_concurrent_pages: int,
     on_result=None,
-) -> Dict[JobKey, dict]:
-    results: Dict[JobKey, dict] = {}
+    abb_click_attempts: int = 3,
+) -> None:
     queue: asyncio.Queue = asyncio.Queue()
 
     for job in jobs:
         await queue.put(job)
+
+    workers = [
+        asyncio.create_task(
+            firefox_worker(context, queue, results, output_dir, on_result, abb_click_attempts)
+        )
+        for _ in range(max(1, min(max_concurrent_pages, len(jobs))))
+    ]
+
+    for _ in workers:
+        await queue.put(None)
+
+    await queue.join()
+    await asyncio.gather(*workers)
+
+
+async def download_with_firefox(
+    jobs: List[JobKey],
+    max_concurrent_pages: int,
+    on_result=None,
+    on_status=None,
+) -> Dict[JobKey, dict]:
+    results: Dict[JobKey, dict] = {}
 
     with TemporaryDirectory() as output_dir:
         async with async_playwright() as p:
@@ -168,16 +197,36 @@ async def download_with_firefox(
                 if any(supplier == "abb" for supplier, _ in jobs):
                     await prepare_shared_context(context)
 
-                workers = [
-                    asyncio.create_task(firefox_worker(context, queue, results, output_dir, on_result))
-                    for _ in range(max(1, min(max_concurrent_pages, len(jobs))))
+                await run_firefox_pass(
+                    context, jobs, results, output_dir, max_concurrent_pages, on_result
+                )
+
+                # ABB builds some PDFs on demand and caches them, so an item that
+                # timed out is often ready by the time everything else is done.
+                # Give each failed ABB item one more go before reporting it.
+                retry_jobs = [
+                    job for job in jobs if job[0] == "abb" and not results[job]["success"]
                 ]
+                if retry_jobs:
+                    if on_status is not None:
+                        on_status(f"Retrying {len(retry_jobs)} ABB item(s) that failed the first time...")
 
-                for _ in workers:
-                    await queue.put(None)
+                    first_errors = {job: results[job]["error"] for job in retry_jobs}
+                    await run_firefox_pass(
+                        context,
+                        retry_jobs,
+                        results,
+                        output_dir,
+                        max_concurrent_pages,
+                        on_result=None,
+                        abb_click_attempts=1,
+                    )
 
-                await queue.join()
-                await asyncio.gather(*workers)
+                    for job in retry_jobs:
+                        if not results[job]["success"]:
+                            results[job]["error"] = (
+                                f"{results[job]['error']} (First attempt: {first_errors[job]})"
+                            )
 
             finally:
                 await context.close()
@@ -272,7 +321,18 @@ def download_all(
             on_progress(finished, total, "Opening ABB and Carlo Gavazzi product pages...")
         try:
             ensure_playwright_firefox()
-            results.update(asyncio.run(download_with_firefox(firefox_jobs, max_concurrent_pages, report)))
+            results.update(
+                asyncio.run(
+                    download_with_firefox(
+                        firefox_jobs,
+                        max_concurrent_pages,
+                        on_result=report,
+                        on_status=lambda message: on_progress(finished, total, message)
+                        if on_progress is not None
+                        else None,
+                    )
+                )
+            )
         except Exception as e:
             for job in firefox_jobs:
                 if job not in results:
