@@ -23,7 +23,7 @@ from pipeline import build_pack, download_all
 # Page config
 # ---------------------------
 st.set_page_config(
-    page_title="Datasheet Pack Builder",
+    page_title="ABB·PHX·GAV Pack Builder",
     page_icon="📕",
     layout="centered",
 )
@@ -288,7 +288,7 @@ st.markdown(
     """
     <div class="hero-card">
         <div class="hero-badge">DATASHEET AUTOMATION TOOL</div>
-        <div class="hero-title">Datasheet Pack Builder</div>
+        <div class="hero-title">ABB·PHX·GAV Pack Builder</div>
         <div class="hero-subtitle">
             Enter item codes from ABB, Phoenix Contact and Carlo Gavazzi, retrieve their
             datasheets automatically, and generate one consolidated PDF pack in your order.
