@@ -139,10 +139,14 @@ def build_type_overlay(type_text: str, page_width: float, page_height: float) ->
     return buffer.getvalue()
 
 
-def build_cover_page(template_bytes: bytes, type_text: str):
-    """Return the cover template page, with the item type written on it."""
+def add_cover_page(writer: PdfWriter, template_bytes: bytes, type_text: str):
+    """Add the cover template page to the writer, with the item type written on it.
+
+    The page is added first and drawn on afterwards: pypdf 7 no longer lets a
+    page that belongs to no writer be modified.
+    """
     template_reader = PdfReader(BytesIO(template_bytes))
-    page = template_reader.pages[0]
+    page = writer.add_page(template_reader.pages[0])
 
     if type_text:
         overlay_bytes = build_type_overlay(
@@ -355,7 +359,7 @@ def merge_items_with_covers(
 
     for item, reader in prepared:
         if template_bytes:
-            writer.add_page(build_cover_page(template_bytes, (item.get("type") or "").strip()))
+            add_cover_page(writer, template_bytes, (item.get("type") or "").strip())
         for page in reader.pages:
             writer.add_page(page)
 
